@@ -142,3 +142,80 @@ export async function cancelBooking(token: string, bookingId: string): Promise<v
   });
   if (!response.ok) await throwProblem(response);
 }
+
+export type Membership = {
+  planCode: PlanCode;
+  planName: string;
+  priceCents: number;
+  status: "ACTIVE" | "PAUSED" | "CANCELLED";
+  startedAt: string;
+  renewsAt: string | null;
+  aiTrainer: boolean;
+  aiAssistant: boolean;
+};
+
+export async function fetchMembership(token: string): Promise<Membership> {
+  const response = await fetch(`${API_URL}/api/v1/me/membership`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export type SetProgress = { setIndex: number; done: boolean };
+
+export type ExerciseProgress = {
+  exerciseIndex: number;
+  name: string;
+  reps: string;
+  weightKg: number | null;
+  restSeconds: number | null;
+  note: string | null;
+  sets: SetProgress[];
+};
+
+export type TodayWorkout = {
+  hasPlan: boolean;
+  restDay: boolean;
+  dayIndex: number;
+  dayLabel: string | null;
+  focus: string | null;
+  exercises: ExerciseProgress[];
+};
+
+export async function fetchTodayWorkout(token: string): Promise<TodayWorkout> {
+  const response = await fetch(`${API_URL}/api/v1/me/workout/today`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function logWorkoutSet(
+  token: string,
+  input: { dayIndex: number; exerciseIndex: number; setIndex: number; done: boolean },
+): Promise<void> {
+  const response = await fetch(`${API_URL}/api/v1/me/workout/logs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) await throwProblem(response);
+}
+
+export type StreakDay = { dayIndex: number; label: string; trained: boolean; restDay: boolean; isToday: boolean };
+
+export type Streak = {
+  hasPlan: boolean;
+  targetDays: number;
+  completedDays: number;
+  days: StreakDay[];
+};
+
+export async function fetchStreak(token: string): Promise<Streak> {
+  const response = await fetch(`${API_URL}/api/v1/me/streak`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}

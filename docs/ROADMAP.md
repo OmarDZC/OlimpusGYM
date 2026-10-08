@@ -27,6 +27,9 @@ Cada trozo = backend + frontend de una funcionalidad, con tests, un commit y una
 
 ## Trozo 4 - Panel de gestión
 - `GET /admin/summary`, gestión de sesiones (crear, editar, cancelar, repetir semanalmente), listado de socios y reservas, "socios que conviene contactar". Cambio de plan solo para dueño.
+- Reglas de `LOGIC.md` §5 aplazadas del Trozo 2 (necesitan la gestión de sesiones de este trozo):
+  - Si staff/owner cancela una sesión completa, todas sus reservas pasan a `CANCELLED` y se avisa a los socios (`Notifier`).
+  - Staff/owner pueden cancelar la reserva de cualquier socio sin el límite de 2 horas (a diferencia de `DELETE /me/bookings/{id}`, que es autoservicio del propio socio).
 - Frontend `/admin` con navegación superior, rol visible bajo el avatar, textos llanos. Dueño y staff ven menús distintos.
 
 ## Trozo 5 - Entrenador con IA

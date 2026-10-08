@@ -5,6 +5,7 @@ import com.gymflow.auth.InvalidCredentialsException;
 import com.gymflow.booking.BookingNotAllowedException;
 import com.gymflow.booking.BookingNotFoundException;
 import com.gymflow.booking.SessionNotFoundException;
+import com.gymflow.plan.MembershipNotFoundException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -55,7 +56,7 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
-    @ExceptionHandler({SessionNotFoundException.class, BookingNotFoundException.class})
+    @ExceptionHandler({SessionNotFoundException.class, BookingNotFoundException.class, MembershipNotFoundException.class})
     public ProblemDetail handleNotFound(RuntimeException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
     }

@@ -13,6 +13,44 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 3 - Mi cuenta (2026-10-08)
+- Hecho:
+  - Antes de empezar: comprobado el resultado de la CI de GitHub Actions del commit del Trozo 2 (repo privado, se consultó con la API de GitHub usando la credencial de git ya guardada en la máquina, sin abrir sesión en el navegador). Los tres jobs (backend, IA, frontend) en verde, incluidos los tests de Testcontainers y el de concurrencia. Nada que arreglar.
+  - `docs/ROADMAP.md`: añadidas al Trozo 4 las dos reglas aplazadas del Trozo 2 (cancelar una sesión completa avisando a los socios, y que staff/owner cancelen cualquier reserva sin el límite de 2 horas).
+  - Backend:
+    - Migración `V4__workout_plans_logs.sql`: tablas `workout_plans` (la rutina de la semana, guardada como JSON de texto) y `workout_logs` (qué series se han marcado hechas).
+    - Paquete `workout`: `WorkoutPlan`/`WorkoutLog`, DTOs del plan (`WeeklyPlan`/`PlanDay`/`PlanExercise`, serializados con Jackson) y de las respuestas (`TodayWorkoutResponse`, `StreakResponse`, etc.).
+    - `WorkoutService`: calcula "hoy" y la semana en la zona `Europe/Madrid` (LOGIC.md: BD en UTC, interfaz en hora de Madrid). `GET /me/workout/today` (rutina de hoy con el estado de cada serie), `GET /me/streak` (constancia semanal: un día cuenta como entrenado si tiene al menos una serie marcada), `POST /me/workout/logs` (marcar una serie, con upsert).
+    - `GET /me/membership`: tarifa actual, precio, estado y si incluye entrenador/asistente con IA.
+    - Seed ampliado: rutina real de 5 días para Carlos (LOGIC.md §1), con los días anteriores a hoy ya marcados como hechos para que la constancia no empiece siempre a cero en la demo.
+  - Frontend:
+    - `/cuenta` se reparte en subpáginas con un submenú (DESIGN.md §8): **Inicio** (`/cuenta`, el panel con próxima clase, constancia, rutina de hoy y resumen de la cuota), **Mis reservas** (`/cuenta/reservas`, el listado completo que antes vivía en Inicio), **Mi entrenamiento** (`/cuenta/entrenamiento`) y **Mi cuota** (`/cuenta/cuota`, el detalle completo).
+    - `/cuenta/entrenamiento` no enseña contenido a medias: como el entrenador con IA de verdad (configurar objetivo, generar rutina, ajustarla) llega en el Trozo 5, esta pantalla es un aviso claro de "llega pronto", con un enlace a Inicio para ver la rutina de esta semana.
+    - `/cuenta/perfil`: página mínima (nombre, correo, rol, cerrar sesión), destino de la pestaña "Perfil" en móvil.
+    - Barra inferior de 5 pestañas en móvil (`MobileAccountNav`, sin emojis, iconos de `lucide-react`): Inicio, Reservar (→ `/horario`), Entrenador (→ `/cuenta/entrenamiento`), Mi cuota, Perfil. Solo visible dentro de `/cuenta/**`.
+    - Componentes nuevos: `TodayWorkoutCard` (casillas por serie, marca de verdad contra el backend), `StreakCard` (casillas Lun-Dom + barra de progreso), `NextClassCard`, `MembershipSummaryCard`.
+  - Verificado de extremo a extremo en el navegador contra el backend real en Docker, con la cuenta de Carlos: rutina de hoy correcta para el día de la semana real, marcar una serie se refleja al momento, constancia semanal correcta, las 4 pestañas del submenú y las 5 de la barra móvil funcionan, "Mi entrenamiento" muestra el aviso en vez de una página rota.
+  - Capturas de `/cuenta` y `/horario` comparadas con `docs/design/v2/mi-cuenta/screen.png` y `docs/design/v2/horario-clases/screen.png` (ver "Pendiente" para lo que no se corrigió).
+- Decisiones / simplificaciones:
+  - Un día de la semana cuenta como "entrenado" para la constancia si tiene **al menos una serie** marcada como hecha, no todas. Es una simplificación razonable para un MVP; LOGIC.md no concreta la regla exacta.
+  - El plan semanal se guarda como una columna de texto con JSON (serializado/leído con Jackson desde `WorkoutService`), no como `jsonb` nativo de Hibernate ni como filas por ejercicio: es la forma más simple de guardar "una rutina activa por socio y semana" sin montar un modelo de datos más grande del que hace falta para el MVP.
+  - Reconstruí la rutina de Carlos con 5 días de entrenamiento y 2 de descanso (lunes a domingo). LOGIC.md no fija el reparto exacto; elegí algo realista (empuje / tirón / pierna / empuje ligero y core / acondicionamiento).
+  - El checkbox de cada ejercicio en la referencia de diseño es uno solo por ejercicio; aquí hay uno **por serie** (p. ej. 4 casillas en vez de 1), porque `workout_logs` guarda el detalle a nivel de serie y LOGIC.md dice explícitamente "el socio marca las series hechas". Es más fiel a los datos que a la captura.
+  - `GET /me/workout/today` no construye "la semana completa" (`GET /me/workout/week` de LOGIC.md §6): no hace falta para lo que pide este trozo (solo "hoy"); se puede añadir cuando el Trozo 5 necesite mostrar la semana entera del entrenador con IA.
+- Pendiente:
+  - Comparación con las referencias de diseño: corregidas la etiqueta de la tarifa junto al saludo y la tarjeta de "Mi cuota" en Inicio (no estaban). Quedan sin tocar, a propósito, por ser decorativas o fuera de alcance de este trozo:
+    - `/cuenta`: el panel grande de la rutina con imagen de fondo y botón "Empezar entrenamiento" de la referencia es más una pieza visual que funcional; aquí es una tarjeta más simple pero con la misma información. El enlace "Ver detalles de la sesión" no existe (no hay página de detalle de sesión todavía).
+    - `/horario`: la referencia tiene un panel lateral con el detalle completo de la sesión activa (equipamiento, descripción, ubicación...) que aquí no existe; y tres filtros (tipo, coach, sala) en vez de uno (solo disciplina). Añadirlos pediría nuevos endpoints para listar coaches/salas, fuera de lo que pedía el Trozo 2. La franja inferior "Pico de afluencia / Climatización / Política de cancelación" tampoco está: "climatización" la pide quitar `DESIGN.md` explícitamente, y "pico de afluencia" sería un dato inventado que `DESIGN.md §10` prohíbe; la política de cancelación ya se explica en el texto de la cabecera.
+  - La carrera de reservas simultáneas solapadas del mismo socio (anotada en el Trozo 2) sigue sin arreglar.
+- Cómo probarlo:
+  - Backend: `cd backend && mvn test`.
+  - De verdad: `docker compose up -d`, entrar como `carlos@olympusgym.test` / `Demo1234!`, ver `/cuenta` (rutina de hoy, constancia, próxima clase, cuota), marcar una serie, y recorrer el submenú y la barra inferior en móvil.
+- Tests:
+  - `mvn test`: BUILD SUCCESS, 33/33 en verde (8 nuevos de `WorkoutAndMembershipHttpTest`: rutina propia, sin rutina, aislamiento entre socios —uno nunca ve ni toca la rutina del otro—, marcar serie y que se refleje, cuota propia, constancia, y que los tres endpoints exigen sesión).
+  - Frontend: `npm run typecheck` y `npm run build` en verde (12 páginas).
+
+---
+
 ### Trozo 2 - Horario y reservas (2026-10-08)
 - Hecho:
   - Backend:
@@ -37,7 +75,8 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
   - Cancelar una sesión completa (LOGIC.md §5.5, "si staff/owner cancela una sesión, todas las reservas pasan a CANCELLED") no está construido todavía: crear/editar/cancelar sesiones es explícitamente del Trozo 4 (gestión), y no existe aún ningún endpoint para crear sesiones manualmente fuera del seed.
   - `/api/v1/me/bookings` no tiene una comprobación de rol explícita (`hasRole("MEMBER")`): en la práctica solo un socio puede reservar porque `BookingService` exige una membresía activa, y el seed no da membresías a `OWNER`/`STAFF`. Es más simple que añadir un rol más al `SecurityConfig` para un caso que ya queda cubierto por los datos.
 - Pendiente:
-  - Nada bloqueante. Falta por ver en la CI de GitHub Actions (tiene Docker, así que debería ir bien, pero no se ha comprobado ahí todavía, solo en local).
+  - Confirmado: la CI de GitHub Actions pasó en verde para este commit (los tres jobs: backend, IA y frontend), incluidos los tests de Testcontainers y el de concurrencia, que en GitHub Actions sí corren (el runner trae Docker).
+  - **Mejora pendiente, no arreglada: posible carrera entre dos reservas simultáneas del mismo socio a clases que se solapan.** `BookingService.book()` bloquea la fila de la sesión que se está reservando (`lockById`), lo cual evita la sobreventa de aforo de verdad (ver el test de concurrencia). Pero la comprobación de solape (`existsActiveOverlapping`) consulta las reservas ya guardadas del socio sin bloquear nada a nivel de socio. Si el mismo socio manda dos peticiones a la vez para reservar dos sesiones *distintas* que se solapan entre sí, cada petición bloquea la fila de *su propia* sesión (filas distintas, sin conflicto entre ellas) y ninguna de las dos ve todavía la reserva de la otra al comprobar el solape, así que ambas podrían pasar la validación y acabar con dos reservas activas solapadas para la misma persona. Es un caso raro (alguien reservando dos pestañas a la vez) y no lo cubre ningún test todavía. Posible arreglo cuando se retome: un bloqueo por socio (p. ej. `pg_advisory_xact_lock` con el id del socio) al principio de `book()`, antes de comprobar solapes.
 - Cómo probarlo:
   - Backend: `cd backend && mvn test` (con Docker arriba, los 11 tests de `BookingServiceTest` corren de verdad, incluido el de concurrencia).
   - De verdad: `docker compose up -d`, entrar en `http://localhost:3000/horario`, reservar una clase (con cualquier cuenta del seed, contraseña `Demo1234!`) y verla en `/cuenta`.

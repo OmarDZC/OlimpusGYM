@@ -14,10 +14,23 @@ import com.gymflow.plan.PlanCode;
 import com.gymflow.plan.PlanRepository;
 import com.gymflow.tenant.Tenant;
 import com.gymflow.tenant.TenantRepository;
+import com.gymflow.workout.PlanSource;
+import com.gymflow.workout.WorkoutLog;
+import com.gymflow.workout.WorkoutLogRepository;
+import com.gymflow.workout.WorkoutPlan;
+import com.gymflow.workout.WorkoutPlanRepository;
+import com.gymflow.workout.WorkoutService;
+import com.gymflow.workout.dto.PlanDay;
+import com.gymflow.workout.dto.PlanExercise;
+import com.gymflow.workout.dto.WeeklyPlan;
+import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -86,6 +99,9 @@ public class DevDataSeeder implements CommandLineRunner {
     private final MembershipRepository memberships;
     private final ClassSessionRepository classSessions;
     private final BookingService bookingService;
+    private final WorkoutPlanRepository workoutPlans;
+    private final WorkoutLogRepository workoutLogs;
+    private final WorkoutService workoutService;
     private final PasswordEncoder passwordEncoder;
 
     public DevDataSeeder(
@@ -95,6 +111,9 @@ public class DevDataSeeder implements CommandLineRunner {
             MembershipRepository memberships,
             ClassSessionRepository classSessions,
             BookingService bookingService,
+            WorkoutPlanRepository workoutPlans,
+            WorkoutLogRepository workoutLogs,
+            WorkoutService workoutService,
             PasswordEncoder passwordEncoder) {
         this.tenants = tenants;
         this.users = users;
@@ -102,6 +121,9 @@ public class DevDataSeeder implements CommandLineRunner {
         this.memberships = memberships;
         this.classSessions = classSessions;
         this.bookingService = bookingService;
+        this.workoutPlans = workoutPlans;
+        this.workoutLogs = workoutLogs;
+        this.workoutService = workoutService;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -135,6 +157,11 @@ public class DevDataSeeder implements CommandLineRunner {
         if (classSessions.count() == 0) {
             seedSchedule(tenant, marta, dani, members);
         }
+
+        members.stream()
+            .filter(m -> m.getEmail().equalsIgnoreCase("carlos@olympusgym.test"))
+            .findFirst()
+            .ifPresent(carlos -> seedCarlosWorkoutPlan(tenant, carlos));
 
         log.info(
             "Seed de dev/demo comprobado: tenant={}, usuarios={}, planes={}, sesiones={}",
@@ -214,6 +241,74 @@ public class DevDataSeeder implements CommandLineRunner {
                         && s.getStartsAt().isAfter(today.plusDays(extra.dayOffsetAtLeast()).atStartOfDay(DEMO_ZONE).toInstant()))
                     .findFirst()
                     .ifPresent(session -> tryBook(tenant, member, session.getId())));
+        }
+    }
+
+    /**
+     * Rutina de ejemplo de Carlos (LOGIC.md §1), 5 días a la semana. Se guarda como plan
+     * MANUAL: la generación real con IA llega en el Trozo 5. Si ya tiene un plan para la
+     * semana actual, no se toca (así cada semana que arranques en dev tendrás una rutina
+     * fresca, pero sin perder lo que ya hubiera para la semana en curso).
+     */
+    private void seedCarlosWorkoutPlan(Tenant tenant, User carlos) {
+        LocalDate today = LocalDate.now(ZoneId.of("Europe/Madrid"));
+        LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        if (workoutPlans.findByTenantIdAndUserIdAndWeekStart(tenant.getId(), carlos.getId(), weekStart).isPresent()) {
+            return;
+        }
+
+        WeeklyPlan weeklyPlan = new WeeklyPlan(List.of(
+            new PlanDay(0, "Día 1: Empuje y espalda alta", "Fuerza e hipertrofia", false, List.of(
+                new PlanExercise(0, "Press de banca plano", 4, "8-10", 80.0, 90,
+                    "Barra olímpica, agarre cerrado con pausa escapular"),
+                new PlanExercise(1, "Press militar con mancuernas", 3, "10", 24.0, 75, "Banco a 75°"),
+                new PlanExercise(2, "Fondos en paralelas", 3, "8-12", null, 75, "Lastre opcional"),
+                new PlanExercise(3, "Extensión de tríceps en polea", 3, "12-15", 25.0, 60, "Agarre prono"))),
+            new PlanDay(1, "Día 2: Espalda y tirón", "Fuerza e hipertrofia", false, List.of(
+                new PlanExercise(0, "Dominadas con lastre", 4, "6-8", 10.0, 90,
+                    "Agarre prono, extensión completa de codo"),
+                new PlanExercise(1, "Remo con barra 45°", 4, "10", 70.0, 75, "Tracción al esternón"),
+                new PlanExercise(2, "Curl de bíceps con barra", 3, "10-12", 30.0, 60, null),
+                new PlanExercise(3, "Face pull en polea", 3, "15", 15.0, 45, "Codos altos"))),
+            new PlanDay(2, "Día 3: Descanso", "Recuperación", true, List.of()),
+            new PlanDay(3, "Día 4: Pierna completa", "Fuerza e hipertrofia", false, List.of(
+                new PlanExercise(0, "Sentadilla trasera barra alta", 4, "6", 105.0, 120,
+                    "Profundidad paralela con control en el descenso"),
+                new PlanExercise(1, "Peso muerto rumano", 3, "8-10", 90.0, 90,
+                    "Espalda neutra, rango desde la cadera"),
+                new PlanExercise(2, "Zancadas con mancuernas", 3, "12 por pierna", 20.0, 75, null),
+                new PlanExercise(3, "Elevación de gemelos de pie", 4, "15-20", 40.0, 45, null))),
+            new PlanDay(4, "Día 5: Empuje ligero y core", "Técnica y control", false, List.of(
+                new PlanExercise(0, "Press inclinado con mancuernas", 3, "10", 28.0, 75, "Banco a 30°"),
+                new PlanExercise(1, "Remo con mancuerna a una mano", 3, "10 por brazo", 26.0, 60, null),
+                new PlanExercise(2, "Plancha", 3, "45 seg", null, 45, "Core activo, cadera neutra"))),
+            new PlanDay(5, "Día 6: Acondicionamiento", "Resistencia y fuerza general", false, List.of(
+                new PlanExercise(0, "Sentadilla goblet", 3, "12", 24.0, 60, null),
+                new PlanExercise(1, "Dominadas asistidas", 3, "8-10", null, 60, "Banda de asistencia según nivel"),
+                new PlanExercise(2, "Burpees", 3, "12", null, 45, null),
+                new PlanExercise(3, "Plancha lateral", 3, "30 seg por lado", null, 45, null))),
+            new PlanDay(6, "Día 7: Descanso", "Recuperación", true, List.of())));
+
+        WorkoutPlan plan = new WorkoutPlan(
+            tenant.getId(), carlos.getId(), weekStart, "Fuerza e hipertrofia", "Avanzado", 5,
+            workoutService.serialize(weeklyPlan), PlanSource.MANUAL);
+        workoutPlans.save(plan);
+
+        // Días de entrenamiento ya pasados esta semana: se marcan como completados para que
+        // la constancia semanal no empiece siempre a cero en la demo.
+        int todayIndex = today.getDayOfWeek().getValue() - 1;
+        for (PlanDay day : weeklyPlan.days()) {
+            if (day.restDay() || day.dayIndex() >= todayIndex) {
+                continue;
+            }
+            for (PlanExercise exercise : day.exercises()) {
+                for (int setIndex = 0; setIndex < exercise.sets(); setIndex++) {
+                    BigDecimal weight = exercise.weightKg() != null ? BigDecimal.valueOf(exercise.weightKg()) : null;
+                    workoutLogs.save(new WorkoutLog(
+                        tenant.getId(), carlos.getId(), plan.getId(), day.dayIndex(), exercise.exerciseIndex(),
+                        setIndex, true, weight, null));
+                }
+            }
         }
     }
 
