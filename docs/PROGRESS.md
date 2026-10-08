@@ -13,6 +13,23 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Arreglo - El 503 del entrenador con IA tardaba ~30 s sin proveedor (2026-10-08)
+- Hecho:
+  - Antes de empezar: comprobado el resultado de la CI de GitHub Actions del commit del Trozo 5b (`9dbdb67`, en verde los cuatro jobs). Nada que arreglar.
+  - `ai-service/app/llm.py`: el cliente de OpenAI ahora se crea con `timeout=httpx.Timeout(connect=3.0, read=90.0, write=10.0, pool=3.0)` y `max_retries=0`. Antes no fijaba ninguno de los dos: el SDK reintentaba 3 veces por su cuenta ante un fallo de conexión (además de los reintentos propios de `app/trainer.py`, que ya le devuelven el motivo del fallo al modelo), y sin plazo de conexión explícito, resolver un proveedor caído podía tardar bastante. Con esto, un proveedor inalcanzable falla rápido (conexión) sin penalizar una generación real que tarde en responder (lectura).
+  - Test nuevo (`tests/test_llm.py`): comprueba que el cliente que construye `get_client()` tiene `max_retries == 0` y el timeout de conexión corto, para que una regresión futura (p. ej. alguien quita el `max_retries=0` "para ser más robusto") no vuelva a colar el mismo problema sin que un test lo note.
+  - Verificado también contra el servicio real en Docker (reconstruida la imagen): el mismo `curl` que antes tardaba ~30 s en dar el 503 ahora tarda **~4 s**.
+- Decisiones / simplificaciones:
+  - Los valores (3 s conexión, 90 s lectura) están fijos en el código, no en variables de entorno: no hay una necesidad real hoy de cambiarlos por despliegue, y añadir configuración para algo que nadie ha pedido ajustar habría sido construir por adelantado.
+- Pendiente: nada.
+- Cómo probarlo:
+  - `cd ai-service && pytest -v`.
+  - De verdad: `docker compose up -d ai-service` y `time curl -X POST http://localhost:8000/v1/trainer/plan -H "Content-Type: application/json" -d '{"goal":"hypertrophy","level":"beginner","days_per_week":2,"equipment":[],"limitations":[]}'` (sin LLM configurado, debe dar 503 en unos segundos, no en medio minuto).
+- Tests:
+  - `pytest -v`: 8/8 en verde (1 nuevo).
+
+---
+
 ### Trozo 5b - Entrenador con IA: backend y frontend (2026-10-08)
 - Hecho:
   - `POST /me/workout/generate` (`GenerateWorkoutRequest`: goal, level, daysPerWeek, equipment, limitations):
