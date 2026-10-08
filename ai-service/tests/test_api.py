@@ -12,10 +12,6 @@ def test_health_ok():
 
 
 def test_plan_validates_input():
+    # days_per_week fuera de rango (1-7): nunca llega a tocar al LLM, Pydantic lo rechaza antes.
     r = client.post("/v1/trainer/plan", json={"goal": "hypertrophy", "level": "beginner", "days_per_week": 99})
     assert r.status_code == 422
-
-
-def test_plan_not_implemented_yet():
-    r = client.post("/v1/trainer/plan", json={"goal": "strength", "level": "intermediate", "days_per_week": 4})
-    assert r.status_code == 501

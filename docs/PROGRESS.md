@@ -13,6 +13,30 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 5a - Entrenador con IA: servicio de IA (2026-10-08)
+- Hecho:
+  - `POST /v1/trainer/plan` implementado de verdad (antes devolvía 501). Nuevo módulo `app/trainer.py`:
+    - Construye el prompt en español llano a partir de `PlanRequest` (objetivo, nivel, días/semana, material, limitaciones), pidiendo al modelo un JSON con la forma exacta de `WeeklyPlan`/`DayPlan`/`ExercisePlan` (ya existían en `app/schemas.py`), sin bloques de código ni texto alrededor.
+    - Valida la respuesta con Pydantic y, además, que el número de días del plan coincida con `days_per_week` pedido y que no haya días repetidos (un fallo real y frecuente de los LLM que Pydantic por sí solo no detecta, porque la lista de días es válida aunque le sobren o falten).
+    - **Hasta 2 reintentos** (3 intentos en total): si la respuesta no es un JSON válido o no cumple lo anterior, se le devuelve al modelo el motivo exacto del fallo y se le pide que lo corrija, en vez de repetir el mismo prompt a ciegas.
+    - Si falla **hablar** con el proveedor (red, 401, timeout...), se trata como "no disponible": `HTTPException(503)` con un mensaje amable. Si tras los 3 intentos la respuesta sigue sin ser válida, `HTTPException(502)`.
+  - El cliente de LLM se inyecta con `Depends(get_client)` (antes se construía dentro de la función): así los tests pueden sustituirlo por uno falso con `app.dependency_overrides`, sin tocar red ni variables de entorno.
+  - Tests nuevos (`tests/test_trainer.py`, con un cliente falso en `tests/fakes.py` que imita solo la forma del SDK de OpenAI que se usa): respuesta válida a la primera, respuesta inválida que se corrige al reintentar (y se comprueba que de verdad hizo dos llamadas, no una), fallo definitivo tras 3 intentos → 502, número de días equivocado tratado igual que un JSON inválido, y proveedor inalcanzable → 503.
+  - Verificado también contra el servicio real en Docker (reconstruida la imagen): sin Ollama levantado, `POST /v1/trainer/plan` responde `503` con el mensaje amable, tal cual se ve en producción si el LLM configurado no responde.
+- Decisiones / simplificaciones:
+  - No se usó el `response_format: json_object` de la API de OpenAI (que fuerza JSON): no todos los proveedores compatibles lo soportan igual (Groq, Gemini vía capa de compatibilidad...), y el encargo pide que el servicio sea agnóstico de verdad. En su lugar, el prompt pide el JSON de forma explícita y estricta, y el parseo quita un posible bloque ```json ... ``` si el modelo lo añade de todas formas.
+  - El plan generado no incluye peso sugerido por ejercicio (`weightKg` existe en el esquema del backend pero queda `null` para los planes de IA): calcularlo de verdad necesitaría saber las marcas personales del socio, que no existen en el modelo de datos de `LOGIC.md`. Queda fuera de este trozo; anotado también de cara al Trozo 5b.
+  - `POST /v1/trainer/adjust` (ajuste semanal para Atleta Pro, LOGIC.md §7) no se construyó: el encargo de este trozo solo pedía `POST /v1/trainer/plan`. Queda para un trozo posterior si se retoma el roadmap.
+- Pendiente:
+  - No hay un LLM real configurado en esta máquina (ni Ollama levantado, ni `.env` con otro proveedor): todo lo anterior está verificado con el cliente falso de los tests y, contra el servicio real, solo se ha podido comprobar el camino de "no disponible" (503). Falta probar un plan generado por un modelo de verdad; en cuanto haya un proveedor configurado (`docker compose --profile local-llm up -d ollama` + `ollama pull llama3.1:8b`, o unas claves de Groq/Gemini en `.env`), probarlo con `curl -X POST http://localhost:8000/v1/trainer/plan` y revisar a mano que el español y los ejercicios tengan sentido.
+- Cómo probarlo:
+  - `cd ai-service && pytest -v` (o con el venv: `.venv/Scripts/python -m pytest -v`).
+  - De verdad (sin LLM configurado, para ver el 503): `docker compose up -d ai-service` y luego el `curl` de arriba.
+- Tests:
+  - `pytest -v`: 7/7 en verde (2 de `test_api.py`, 5 nuevos de `test_trainer.py`).
+
+---
+
 ### Mini-trozo - Tests end-to-end con Playwright (2026-10-08)
 - Hecho:
   - Antes de empezar: comprobado el resultado de la CI de GitHub Actions del commit del Trozo 4b (en verde, los tres jobs). Nada que arreglar.
