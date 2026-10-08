@@ -52,3 +52,6 @@ Cada trozo = backend + frontend de una funcionalidad, con tests, un commit y una
 
 ## Trozo 9 (opcional) - Pagos
 - Stripe Checkout en modo test para las 3 tarifas y webhook que actualiza `memberships`.
+
+## Trozo 9b (opcional, junto a Trozo 9) - Cambios de tarifa y avisos de renovación
+- Ver `LOGIC.md` §12 para las reglas. Sin implementar todavía: solo documentado para cuando se retome Pagos.

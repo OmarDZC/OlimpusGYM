@@ -120,3 +120,46 @@ Stripe Checkout en modo test para las tres tarifas y webhook que actualiza `memb
 - Tests del servicio de IA con LLM simulado (validación, reintentos, error).
 - Frontend: typecheck, build y al menos pruebas de los flujos clave (login por rol, reservar).
 - CI en GitHub Actions (backend, IA, frontend).
+
+## 12. Cambios de tarifa y avisos de renovación (para el final)
+
+**Sin implementar todavía** (Trozo 9b, opcional, junto a Pagos): solo documentado aquí para no perder
+la idea cuando se retome esa fase, después de que exista Stripe (§10). Nada de esto existe hoy en el
+esquema (`memberships` no tiene `pending_plan_id`, `pending_effective_at`, `cancel_at_period_end` ni
+`renewal_notice_sent_at`) ni hay ningún job programado.
+
+- **Subir de tarifa:** siempre y al instante. Se cobra la diferencia prorrateada por los días que quedan
+  del periodo actual (precio nuevo − precio actual, proporcional a los días restantes); la fecha de
+  renovación (`renews_at`) no cambia.
+- **Bajar de tarifa:** nunca de inmediato. Se programa para el siguiente periodo: `memberships`
+  necesitaría `pending_plan_id` y `pending_effective_at`. No se devuelve dinero de lo ya pagado y, hasta
+  esa fecha, el socio conserva las ventajas de su tarifa actual. Si vuelve a subir de tarifa antes de que
+  se aplique, se cancela la bajada programada (se limpian esos dos campos).
+- **Cancelar:** la membresía sigue `ACTIVE` hasta el final del periodo ya pagado
+  (`cancel_at_period_end`); no se corta el acceso al instante.
+- **Aviso de renovación:** un job diario (Spring `@Scheduled`) que, unos 3 días antes de `renews_at`,
+  envía un aviso ("Tu suscripción se renueva el X por Y €. Continúa, cambia de tarifa o cancela") a
+  través de `Notifier` (log en dev, SMTP/MailHog si está configurado). Una sola vez por periodo,
+  controlado con un campo `renewal_notice_sent_at` en `memberships` (si ya tiene valor para el periodo
+  actual, el job no reenvía).
+- **Cobro sin Stripe todavía:** mientras no exista la integración de pagos, cualquier cobro de diferencia
+  por subir de tarifa queda como un registro simulado "pendiente (demo)", igual que el alta inicial
+  (§10): no se mueve dinero de verdad.
+- **UX:** el mensaje que hoy ve un socio sin `ai_trainer` en su tarifa ("Tu tarifa no incluye el
+  entrenador con IA") debería enlazar a una acción de "Subir de tarifa" en vez de quedarse como texto
+  plano sin salida.
+
+Decisiones abiertas (a resolver cuando se implemente; lo de abajo es lo asumido por defecto, no una
+decisión cerrada):
+
+- **Prorrateo vs. mes completo** al subir de tarifa: por defecto, prorrateo por días restantes del
+  periodo (más justo, más código). La alternativa simple — cobrar el precio completo de la tarifa nueva
+  y ya está, sin calcular nada — es válida si en su momento se prioriza simplicidad sobre precisión.
+- **Renovación automática vs. manual:** por defecto, renovación automática (la suscripción se cobra sola
+  salvo que el socio cancele), que es el modelo estándar de una suscripción con Stripe Billing/Checkout.
+  La alternativa (el socio paga cada mes a mano) evitaría casi todo el job de aviso de renovación, pero
+  no encaja con "Stripe Checkout... y webhook que actualiza `memberships`" que ya describe el Trozo 9.
+
+Esto no es una especificación cerrada: al retomarlo, conviene revisarlo contra lo que Stripe ofrezca de
+serie (p. ej. sus "subscription schedules" ya calculan el prorrateo de subidas/bajadas de plan, lo que
+podría simplificar bastante la parte de `pending_plan_id`/`pending_effective_at`).

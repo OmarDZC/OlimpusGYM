@@ -13,6 +13,18 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Documentación - Cambios de tarifa y avisos de renovación, para cuando se retome Pagos (2026-10-08)
+- Hecho:
+  - `docs/LOGIC.md` §12 (nueva, al final del archivo para no renumerar las que ya citan comentarios del código: "LOGIC.md §5.5", "§7", etc.): reglas para subir tarifa (al instante, prorrateado, no cambia `renews_at`), bajar tarifa (nunca de inmediato, se programa con `pending_plan_id`/`pending_effective_at`, subir de nuevo cancela la bajada), cancelar (`cancel_at_period_end`, activa hasta el final del periodo pagado), y un job diario de aviso de renovación (`@Scheduled`, ~3 días antes, una sola vez por periodo con `renewal_notice_sent_at`, por `Notifier`). También que el cobro de la diferencia, mientras no haya Stripe, queda como "pendiente (demo)", y que el aviso de "tu tarifa no incluye IA" debería enlazar a subir de tarifa.
+  - `docs/ROADMAP.md`: Trozo 9b (opcional, junto al Trozo 9 de Pagos), que remite a `LOGIC.md §12`.
+  - Anotadas explícitamente las dos decisiones abiertas que pidió el encargo, con lo asumido por defecto: prorrateo por días restantes (alternativa: cobrar el precio completo sin prorratear) y renovación automática al estilo Stripe Billing (alternativa: el socio paga cada mes a mano, lo que casi elimina el job de aviso).
+- Decisiones / simplificaciones: ninguna más allá de lo ya anotado en `LOGIC.md` §12; es solo documentación, nada de código.
+- Pendiente: todo — es a propósito. No se ha tocado el esquema (`memberships` sigue sin esos campos), ni `Notifier`, ni ningún job `@Scheduled`, ni la interfaz. Se implementará si se retoma el Trozo 9/9b.
+- Cómo probarlo: leer `docs/LOGIC.md` §12 y `docs/ROADMAP.md` (Trozo 9b).
+- Tests: no aplica (solo documentación).
+
+---
+
 ### Arreglo - El 503 del entrenador con IA tardaba ~30 s sin proveedor (2026-10-08)
 - Hecho:
   - Antes de empezar: comprobado el resultado de la CI de GitHub Actions del commit del Trozo 5b (`9dbdb67`, en verde los cuatro jobs). Nada que arreglar.
