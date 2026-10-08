@@ -13,6 +13,42 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 2 - Horario y reservas (2026-10-08)
+- Hecho:
+  - Backend:
+    - Migración `V3__class_sessions_bookings.sql`: tablas `class_sessions` y `bookings`, con el índice único parcial de LOGIC.md §4 (una reserva activa como mucho por socio y sesión).
+    - Paquete `booking`: entidades `ClassSession`/`SessionStatus` y `Booking`/`BookingStatus`.
+    - `BookingService`, el corazón del trozo (LOGIC.md §5): reservar bloquea la fila de la sesión (`SELECT ... FOR UPDATE` vía `ClassSessionRepository#lockById`) durante toda la transacción, así que dos reservas concurrentes para la misma sesión se serializan ahí y el aforo nunca se sobrevende. Reglas comprobadas, en este orden: sesión cancelada o ya empezada, membresía activa, ventana de reserva del plan, solape con otra reserva activa, cupo mensual del plan; si hay hueco crea `BOOKED`, si no crea `WAITLIST` con posición. Reservar dos veces la misma sesión es idempotente (devuelve la reserva existente). Cancelar exige que sea la propia reserva y respeta el límite de 2 horas; al cancelar una `BOOKED` promueve en FIFO al primero de la lista de espera y reordena las posiciones de los demás.
+    - `ScheduleService`: arma las respuestas de horario y "mis reservas" (plazas libres, en lista de espera, nombre del entrenador) a partir de las tablas planas.
+    - `Notifier`/`LogNotifier` (LOGIC.md §8): reserva confirmada, en lista de espera, promovido desde lista de espera, reserva cancelada — todo a log, tal y como pide el MVP.
+    - `PublicScheduleController` (`GET /api/v1/public/schedule`, sin sesión) y `BookingController` (`GET/POST /api/v1/me/bookings`, `DELETE /api/v1/me/bookings/{id}`, requieren sesión).
+    - `GlobalExceptionHandler` ampliado: reglas de negocio incumplidas → 409, sesión/reserva inexistente (o de otro socio) → 404.
+    - Seed ampliado: horario de las próximas 2 semanas (84 sesiones, 6 disciplinas, alternando a Marta y Dani como entrenadores, con los nombres de sala de la referencia de diseño), una sesión de Spinning a propósito con aforo reducido (7) para que quede completa con 3 en lista de espera, y un puñado de reservas sueltas para que "Mis reservas" no esté vacío en la demo. Solo se genera la primera vez (sus fechas son relativas a "ahora": no tendría sentido regenerarlas en cada arranque).
+  - Frontend:
+    - `lib/api.ts`: tipos y funciones para horario público y reservas del socio.
+    - `AuthProvider` ahora también expone el `token` (hacía falta para llamar a `/me/bookings` desde las páginas).
+    - `/horario`: selector de día (14 días), filtro por disciplina, tarjetas con hora/sala/entrenador/plazas libres, botón "Reservar" (pide acceso si no hay sesión, LOGIC.md), "Unirme a la lista" cuando está completa, y "Reservado"/"En espera (#N)" con botón de cancelar cuando el socio ya tiene una reserva en esa sesión.
+    - `/cuenta`: sección "Mis reservas" (reservas activas, con cancelar) y una tarjeta de "Tu próxima clase" cuando hay alguna.
+  - Verificado en el navegador contra el backend real (Docker): reservar una clase, verla reflejada en `/cuenta`, cancelarla, y que "Reservar" sin sesión redirige a `/acceso`. También por API con `curl`: reservar, cancelar, y que una sesión llena deja en lista de espera (HTTP 200, no 201).
+- Decisiones / simplificaciones:
+  - El cupo mensual del plan ("hasta 4 reservas/mes") se cuenta por el mes de la **sesión** reservada, no por la fecha en la que se hizo la reserva. Es la lectura más natural de "4 clases al mes". Los límites de mes se calculan en UTC (coherente con que la BD guarda fechas en UTC); la interfaz sigue mostrando la hora en `Europe/Madrid`.
+  - El cupo mensual y la ventana de reserva solo cuentan reservas `BOOKED`, no las que están en lista de espera.
+  - `DELETE /me/bookings/{id}` es autoservicio del propio socio: siempre aplica el límite de 2 horas y solo deja cancelar la reserva de quien la pide (404 si es de otro). La regla de LOGIC.md §5.3 de que "staff/owner pueden cancelar cuando quieran" se añadirá en el Trozo 4 junto con la gestión de sesiones desde el panel.
+  - Cancelar una sesión completa (LOGIC.md §5.5, "si staff/owner cancela una sesión, todas las reservas pasan a CANCELLED") no está construido todavía: crear/editar/cancelar sesiones es explícitamente del Trozo 4 (gestión), y no existe aún ningún endpoint para crear sesiones manualmente fuera del seed.
+  - `/api/v1/me/bookings` no tiene una comprobación de rol explícita (`hasRole("MEMBER")`): en la práctica solo un socio puede reservar porque `BookingService` exige una membresía activa, y el seed no da membresías a `OWNER`/`STAFF`. Es más simple que añadir un rol más al `SecurityConfig` para un caso que ya queda cubierto por los datos.
+- Pendiente:
+  - Nada bloqueante. Falta por ver en la CI de GitHub Actions (tiene Docker, así que debería ir bien, pero no se ha comprobado ahí todavía, solo en local).
+- Cómo probarlo:
+  - Backend: `cd backend && mvn test` (con Docker arriba, los 11 tests de `BookingServiceTest` corren de verdad, incluido el de concurrencia).
+  - De verdad: `docker compose up -d`, entrar en `http://localhost:3000/horario`, reservar una clase (con cualquier cuenta del seed, contraseña `Demo1234!`) y verla en `/cuenta`.
+  - Sesión con lista de espera ya lista para enseñar: Spinning del segundo día del horario (aforo 7, ya completa con 3 en espera en el seed).
+- Tests:
+  - `mvn test`: BUILD SUCCESS, 25/25 en verde (11 nuevos de `BookingServiceTest`, incluido `fiftyThreadsTwentySeats_exactlyTwentyBooked`: 50 hilos reservando una sesión de 20 plazas ⇒ exactamente 20 `BOOKED` y 30 `WAITLIST`, siempre, gracias al bloqueo de fila).
+  - Bug real encontrado y arreglado durante la verificación con Docker: PostgreSQL no podía resolver el tipo de un parámetro `null` dentro de `lower(...)` en la consulta de filtrado del horario (`function lower(bytea) does not exist`), algo que ningún test detectó porque ninguno llamaba a `search()` con filtros vacíos. Se arregló forzando el tipo con `cast(:param as string)`. Queda anotado aquí para no repetir el error en consultas parecidas.
+  - Frontend: `npm run typecheck` y `npm run build` en verde (incluye `/horario` y los cambios en `/cuenta`).
+
+---
+
 ### Trozo 1 - Autenticación y roles (2026-10-08)
 - Hecho:
   - Nombre del proyecto: en esta sesión cambié por error el README y la documentación para que dijeran solo "OlympusGYM" en todas partes. Queda corregido: tal y como dice `PROJECT_BRIEF.md`, **GymFlow es la plataforma** (el software, este repositorio) y **OlympusGYM es el gimnasio ficticio de demostración** que la usa. En la interfaz, la marca visible es siempre OlympusGYM; "GymFlow" solo aparece en letra pequeña ("Powered by GymFlow") y en la sección del entrenador con IA. Los identificadores técnicos internos (paquete Java `com.gymflow`, artefacto Maven, variables `GYMFLOW_*`, paquete npm) se quedan como están: no hay que renombrarlos.

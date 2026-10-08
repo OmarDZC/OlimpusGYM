@@ -71,3 +71,74 @@ export async function fetchMe(token: string): Promise<AuthUser> {
   if (!response.ok) await throwProblem(response);
   return response.json();
 }
+
+export type SessionStatus = "SCHEDULED" | "CANCELLED";
+
+export type ScheduleSession = {
+  id: string;
+  name: string;
+  discipline: string;
+  room: string;
+  coachName: string | null;
+  startsAt: string;
+  endsAt: string;
+  capacity: number;
+  bookedCount: number;
+  freeSlots: number;
+  waitlistCount: number;
+  status: SessionStatus;
+};
+
+export type BookingStatus = "BOOKED" | "WAITLIST" | "CANCELLED" | "ATTENDED" | "NO_SHOW";
+
+export type MyBooking = {
+  id: string;
+  sessionId: string;
+  sessionName: string;
+  discipline: string;
+  room: string;
+  coachName: string | null;
+  startsAt: string;
+  endsAt: string;
+  status: BookingStatus;
+  waitlistPosition: number | null;
+};
+
+export async function fetchSchedule(params: {
+  from?: string;
+  to?: string;
+  discipline?: string;
+}): Promise<ScheduleSession[]> {
+  const query = new URLSearchParams();
+  if (params.from) query.set("from", params.from);
+  if (params.to) query.set("to", params.to);
+  if (params.discipline) query.set("discipline", params.discipline);
+  const response = await fetch(`${API_URL}/api/v1/public/schedule?${query.toString()}`);
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function fetchMyBookings(token: string): Promise<MyBooking[]> {
+  const response = await fetch(`${API_URL}/api/v1/me/bookings`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function bookSession(token: string, sessionId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/v1/me/bookings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ sessionId }),
+  });
+  if (!response.ok) await throwProblem(response);
+}
+
+export async function cancelBooking(token: string, bookingId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/v1/me/bookings/${bookingId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+}

@@ -17,6 +17,7 @@ type RegisterInput = {
 type AuthContextValue = {
   status: Status;
   user: AuthUser | null;
+  token: string | null;
   login: (email: string, password: string) => Promise<AuthUser>;
   register: (input: RegisterInput) => Promise<AuthUser>;
   logout: () => void;
@@ -28,6 +29,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<Status>("loading");
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = readStoredToken();
@@ -39,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .fetchMe(stored)
       .then((me) => {
         setUser(me);
+        setToken(stored);
         setStatus("signed-in");
       })
       .catch(() => {
@@ -48,9 +51,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const applySession = useCallback((auth: api.AuthResponse) => {
-    const { token, ...me } = auth;
-    writeStoredToken(token);
+    const { token: newToken, ...me } = auth;
+    writeStoredToken(newToken);
     setUser(me);
+    setToken(newToken);
     setStatus("signed-in");
     return me;
   }, []);
@@ -74,12 +78,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     clearStoredToken();
     setUser(null);
+    setToken(null);
     setStatus("signed-out");
   }, []);
 
   const value = useMemo(
-    () => ({ status, user, login, register, logout }),
-    [status, user, login, register, logout],
+    () => ({ status, user, token, login, register, logout }),
+    [status, user, token, login, register, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

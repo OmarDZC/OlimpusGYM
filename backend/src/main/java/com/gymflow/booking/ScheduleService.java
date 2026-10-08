@@ -1,0 +1,97 @@
+package com.gymflow.booking;
+
+import com.gymflow.auth.User;
+import com.gymflow.auth.UserRepository;
+import com.gymflow.booking.dto.MyBookingResponse;
+import com.gymflow.booking.dto.SessionSummary;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/** Monta las respuestas de horario y "mis reservas" a partir de las entidades planas. */
+@Service
+public class ScheduleService {
+
+    private final ClassSessionRepository sessions;
+    private final BookingRepository bookings;
+    private final UserRepository users;
+
+    public ScheduleService(ClassSessionRepository sessions, BookingRepository bookings, UserRepository users) {
+        this.sessions = sessions;
+        this.bookings = bookings;
+        this.users = users;
+    }
+
+    @Transactional(readOnly = true)
+    public List<SessionSummary> listSchedule(
+            UUID tenantId, Instant from, Instant to, String discipline, UUID coachId, String room) {
+        List<ClassSession> found = sessions.search(tenantId, from, to, discipline, coachId, room);
+        Map<UUID, String> coachNames = coachNames(found.stream().map(ClassSession::getCoachUserId).toList());
+
+        return found.stream()
+                .map(session -> {
+                    long booked = bookings.countBySessionIdAndStatus(session.getId(), BookingStatus.BOOKED);
+                    long waitlisted = bookings.countBySessionIdAndStatus(session.getId(), BookingStatus.WAITLIST);
+                    int freeSlots = (int) Math.max(0, session.getCapacity() - booked);
+                    return new SessionSummary(
+                            session.getId(),
+                            session.getName(),
+                            session.getDiscipline(),
+                            session.getRoom(),
+                            coachNames.get(session.getCoachUserId()),
+                            session.getStartsAt(),
+                            session.getEndsAt(),
+                            session.getCapacity(),
+                            (int) booked,
+                            freeSlots,
+                            (int) waitlisted,
+                            session.getStatus().name());
+                })
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<MyBookingResponse> listForUser(UUID tenantId, UUID userId) {
+        List<Booking> active = bookings.findActiveForUser(tenantId, userId);
+        Map<UUID, ClassSession> sessionById = new HashMap<>();
+        active.forEach(b -> sessions.findByIdAndTenantId(b.getSessionId(), tenantId).ifPresent(s -> sessionById.put(s.getId(), s)));
+        Map<UUID, String> coachNames = coachNames(sessionById.values().stream().map(ClassSession::getCoachUserId).toList());
+
+        return active.stream()
+                .map(b -> {
+                    ClassSession session = sessionById.get(b.getSessionId());
+                    if (session == null) {
+                        return null;
+                    }
+                    return new MyBookingResponse(
+                            b.getId(),
+                            session.getId(),
+                            session.getName(),
+                            session.getDiscipline(),
+                            session.getRoom(),
+                            coachNames.get(session.getCoachUserId()),
+                            session.getStartsAt(),
+                            session.getEndsAt(),
+                            b.getStatus().name(),
+                            b.getWaitlistPosition());
+                })
+                .filter(r -> r != null)
+                .toList();
+    }
+
+    private Map<UUID, String> coachNames(List<UUID> coachIds) {
+        List<UUID> distinctIds = coachIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if (distinctIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, String> result = new HashMap<>();
+        for (User user : users.findAllById(distinctIds)) {
+            result.put(user.getId(), user.getFullName());
+        }
+        return result;
+    }
+}

@@ -2,6 +2,9 @@ package com.gymflow.common;
 
 import com.gymflow.auth.EmailAlreadyRegisteredException;
 import com.gymflow.auth.InvalidCredentialsException;
+import com.gymflow.booking.BookingNotAllowedException;
+import com.gymflow.booking.BookingNotFoundException;
+import com.gymflow.booking.SessionNotFoundException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -43,5 +46,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(BookingNotAllowedException.class)
+    public ProblemDetail handleBookingNotAllowed(BookingNotAllowedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("No se puede completar la reserva");
+        return problem;
+    }
+
+    @ExceptionHandler({SessionNotFoundException.class, BookingNotFoundException.class})
+    public ProblemDetail handleNotFound(RuntimeException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 }
