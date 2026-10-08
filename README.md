@@ -78,6 +78,20 @@ make ai-test        # pytest
 cd frontend && npm run typecheck
 ```
 
+### End-to-end (Playwright)
+
+Tests de navegador reales contra el stack levantado en Docker: login por rol, reservar y
+cancelar una clase como socio, y que el staff cancele una sesión y la reserva del socio
+quede cancelada. Viven en `e2e/`, aparte de `frontend/` (no son parte del build de Next.js).
+
+```bash
+docker compose up -d postgres redis rabbitmq backend frontend   # no hace falta ai-service
+cd e2e && npm install && npx playwright install --with-deps chromium
+npx playwright test
+```
+
+También corren en GitHub Actions (job `e2e` de la CI) contra el mismo `docker compose`.
+
 ## Puertos
 
 | Servicio   | Puerto |

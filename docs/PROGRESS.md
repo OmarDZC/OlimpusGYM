@@ -13,6 +13,34 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Mini-trozo - Tests end-to-end con Playwright (2026-10-08)
+- Hecho:
+  - Antes de empezar: comprobado el resultado de la CI de GitHub Actions del commit del Trozo 4b (en verde, los tres jobs). Nada que arreglar.
+  - Proyecto nuevo `e2e/` (aparte de `frontend/`, no forma parte del build de Next.js), con Playwright + TypeScript. Tres specs, contra el stack real en Docker:
+    - `login-redirect.spec.ts`: un socio entra en `/cuenta` y, si visita `/admin` a mano, la guarda del cliente lo manda de vuelta; el dueño y el staff entran directamente en `/admin`. Usa las cuentas del seed de demo (solo lectura).
+    - `member-booking.spec.ts`: un socio nuevo (registrado dentro del propio test, sin reservas previas del seed) reserva una clase desde `/horario` y la cancela.
+    - `staff-cancel-session.spec.ts`: un socio nuevo reserva una clase; el staff la cancela desde `/admin/clases`; se vuelve a entrar como ese socio y su reserva ya no aparece en "Mis reservas" (que solo lista `BOOKED`/`WAITLIST`). Cubre la regla aplazada del Trozo 2/4a (cancelar una sesión cancela todas sus reservas activas), de punta a punta.
+  - `e2e/support/helpers.ts`: login y registro **a través del formulario real** (es lo que se quiere probar en el primer test, y mantiene los otros dos realistas); solo la creación de la clase de prueba usa la API directamente como OWNER (`POST /admin/sessions`), porque eso es preparación de datos, no el comportamiento bajo prueba, y así los tests no dependen de rellenar ese formulario ni del horario que ya trae el seed.
+  - Clases de prueba con nombre único (marca de tiempo) y en un día futuro fijo (3 días), dentro de la ventana de reserva de cualquier tarifa (7-14 días) y de los 14 días que muestra `/horario`; cada test crea la suya, así que no interfieren entre sí ni con los datos del seed.
+  - Se añadieron `data-testid` a las tarjetas de sesión en `/horario` y `/admin/clases`, y al selector de día de `/horario`: sin esto, localizar la tarjeta exacta de la clase de prueba (entre las demás del seed) habría dependido de coincidencias de texto frágiles (nombre repetido, fecha con formato de idioma). No cambia nada visible.
+  - Sin esperas arbitrarias: todas las aserciones son de Playwright (`expect(...).toBeVisible()`, `toHaveURL()`, `toHaveCount()`), que reintentan solas hasta que la interfaz reacciona; no hay ningún `waitForTimeout`.
+  - Job nuevo `e2e` en `.github/workflows/ci.yml`: levanta Postgres, backend y frontend con `docker compose up -d --wait` (sin `ai-service`, porque ninguno de los tres escenarios usa IA), espera con un bucle acotado (máx. 2 min) a que backend y frontend respondan, instala Chromium de Playwright y corre los tests. Si falla, sube el reporte HTML de Playwright como artefacto y imprime los logs de `docker compose`.
+  - `Makefile` (`make e2e`) y `README.md` (sección "End-to-end (Playwright)") documentan cómo correrlos en local.
+- Decisiones / simplificaciones:
+  - Si meter esto en CI hubiera sido costoso (reconstruir imágenes, arrancar Ollama, etc.) se iba a dejar solo en local y avisarlo; no hizo falta: ninguno de los tres escenarios pedidos usa el servicio de IA, así que el job de CI no necesita `ai-service` ni Ollama, solo Postgres + backend + frontend, que ya se instalan rápido.
+  - Los tests no limpian las clases de prueba que crean (quedan en el horario, ya sin reservas activas tras cada test). Para este MVP de demo no hace falta: no estorban (nombre claramente de prueba, con marca de tiempo) y evita acoplar los tests a un endpoint de borrado que no existe (solo hay cancelar). Si algún día molesta, se podría añadir un `afterAll` que las cancele vía API.
+  - `workers` fijo a 1 en CI (en local corren en paralelo): más lento pero más predecible en el runner compartido de GitHub Actions; con solo 3 specs no penaliza casi nada.
+- Pendiente:
+  - Nada bloqueante. Quedan fuera del alcance de este mini-trozo (no los pidió el encargo): tests de la reserva en lista de espera/promoción FIFO, y del panel de socios/ingresos del Trozo 4a (esos ya tienen cobertura de integración en el backend).
+- Cómo probarlo:
+  - `docker compose up -d postgres redis rabbitmq backend frontend` (el backend ya debe tener el seed de `dev`/`demo`).
+  - `cd e2e && npm install && npx playwright install --with-deps chromium && npx playwright test`.
+- Tests:
+  - `npx playwright test`: 5/5 en verde (3 specs, el de login por rol tiene 3 casos), repetido tres veces seguidas sin ningún fallo intermitente.
+  - `cd frontend && npm run typecheck`: sin errores, confirma que los `data-testid` añadidos no rompen nada.
+
+---
+
 ### Trozo 4b - Panel de gestión: frontend (2026-10-08)
 - Hecho:
   - Referencia visual: `docs/design/v2/panel-gestion/` no existe. Solo hay `docs/design/reference-v1/panel-dueno-v1-con-sidebar/code.html` (sin `screen.png`, solo HTML/texto, marcado como "solo contenido de referencia" en `DESIGN.md`). Se usó únicamente para sacar ideas de contenido (qué tarjetas y textos tienen sentido en un resumen de gimnasio), nunca su maquetación: su barra lateral no se copió porque el encargo pedía explícitamente navegación superior sin barra lateral, y se excluyeron secciones/jerga fuera de alcance de esa referencia ("Tienda", "Ajustes", "Telemetría de Rendimiento", "Algoritmo IA"/"Modelo IA").

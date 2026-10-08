@@ -144,6 +144,7 @@ export default function HorarioPage() {
             <button
               key={day.toISOString()}
               type="button"
+              data-testid={`schedule-day-${day.toISOString().slice(0, 10)}`}
               onClick={() => setSelectedDayIndex(index)}
               className={cn(
                 "flex min-w-[64px] flex-col items-center rounded-control border px-3 py-2 text-sm transition-colors",
@@ -183,7 +184,11 @@ export default function HorarioPage() {
           const isFull = session.freeSlots <= 0;
 
           return (
-            <Card key={session.id} className="flex flex-wrap items-center justify-between gap-4">
+            <Card
+              key={session.id}
+              data-testid={`session-${session.id}`}
+              className="flex flex-wrap items-center justify-between gap-4"
+            >
               <div className="flex items-center gap-4">
                 <div className="flex flex-col items-center rounded-control border border-border bg-surface-2 px-3 py-2">
                   <span className="font-mono text-lg font-semibold tabular-nums">

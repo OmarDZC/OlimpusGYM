@@ -75,3 +75,61 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Solo lo que necesitan los tres escenarios de e2e/ (login por rol, reservar/cancelar,
+      # cancelación de sesión por staff): ninguno usa IA, así que no hace falta ai-service.
+      - name: Levantar Postgres, backend y frontend
+        run: docker compose up -d --wait postgres redis rabbitmq backend frontend
+
+      - name: Esperar a que el backend responda
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/api/v1/public/ping && exit 0
+            sleep 2
+          done
+          echo "El backend no respondió a tiempo" && exit 1
+
+      - name: Esperar a que el frontend responda
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:3000 && exit 0
+            sleep 2
+          done
+          echo "El frontend no respondió a tiempo" && exit 1
+
+      - name: Configurar Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: npm ci
+        working-directory: e2e
+        run: npm ci
+
+      - name: Instalar navegador de Playwright
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright test
+        working-directory: e2e
+        run: npx playwright test
+
+      - name: Logs de Docker Compose (si algo falló)
+        if: failure()
+        run: docker compose logs --tail=300
+
+      - name: Subir el reporte de Playwright (si algo falló)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7

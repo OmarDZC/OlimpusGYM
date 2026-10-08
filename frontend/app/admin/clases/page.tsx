@@ -187,7 +187,11 @@ export default function AdminClasesPage() {
         {loading && <p className="text-sm text-text-muted">Cargando clases...</p>}
         {!loading && sessions.length === 0 && <p className="text-sm text-text-muted">No hay clases programadas.</p>}
         {sessions.map((session) => (
-          <Card key={session.id} className="flex flex-wrap items-center justify-between gap-4">
+          <Card
+            key={session.id}
+            data-testid={`admin-session-${session.id}`}
+            className="flex flex-wrap items-center justify-between gap-4"
+          >
             <div>
               <Badge tone="neutral">{session.discipline}</Badge>
               <p className="mt-1 font-display text-lg font-bold uppercase tracking-tight">{session.name}</p>
