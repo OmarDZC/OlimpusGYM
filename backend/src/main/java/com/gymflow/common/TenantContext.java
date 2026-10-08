@@ -5,7 +5,7 @@ import java.util.UUID;
 
 /**
  * Guarda el tenant (gimnasio) de la petición actual en un ThreadLocal.
- * Fase 1: se rellenará desde el JWT en lugar de la cabecera X-Tenant-Id.
+ * Lo rellena {@link com.gymflow.auth.JwtAuthenticationFilter} a partir del JWT validado.
  */
 public final class TenantContext {
 

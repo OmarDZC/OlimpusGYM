@@ -11,6 +11,12 @@ import java.util.UUID;
 @Table(name = "tenants")
 public class Tenant {
 
+    /**
+     * MVP de un solo gimnasio: único tenant real, creado por seed (PROJECT_BRIEF.md).
+     * No hay onboarding de gimnasios ni selector de tenant en el login.
+     */
+    public static final String DEFAULT_SLUG = "olympusgym";
+
     @Id
     private UUID id;
 

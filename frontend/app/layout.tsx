@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Barlow_Condensed, Inter } from "next/font/google";
 import Script from "next/script";
+import { AuthProvider } from "@/components/auth/AuthProvider";
 import { TopNav } from "@/components/layout/TopNav";
 import "./globals.css";
 
@@ -42,13 +43,22 @@ const themeInitScript = `
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className={`${barlowCondensed.variable} ${inter.variable}`}>
+    <html
+      lang="es"
+      className={`${barlowCondensed.variable} ${inter.variable}`}
+      // El script de theme-init cambia data-theme antes de hidratar según localStorage:
+      // el HTML del servidor nunca puede saber esa preferencia, así que el mismatch es
+      // esperado y se silencia aquí (no afecta a nada más del árbol).
+      suppressHydrationWarning
+    >
       <body className="min-h-screen bg-bg font-sans text-text antialiased">
         <Script id="theme-init" strategy="beforeInteractive">
           {themeInitScript}
         </Script>
-        <TopNav />
-        {children}
+        <AuthProvider>
+          <TopNav />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

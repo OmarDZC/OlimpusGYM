@@ -4,8 +4,7 @@ Este documento recoge lo decidido con la persona dueña del proyecto en la fase 
 
 ## Qué estamos construyendo
 
-- **GymFlow** es la plataforma (el software y este repositorio). Es un proyecto de portfolio de un programador: tiene que demostrar backend serio (Spring), IA (FastAPI), frontend moderno, tests y despliegue.
-- **OlympusGYM** es el gimnasio ficticio de demostración que usa GymFlow. Tiene su propia marca y su web. GymFlow solo aparece en letra pequeña ("Powered by GymFlow") y en la sección del entrenador con IA ("Con tecnología GymFlow").
+- **OlympusGYM** es el proyecto: el software (este repositorio) y, a la vez, el gimnasio ficticio de demostración con su propia marca y su web. Es un proyecto de portfolio de un programador: tiene que demostrar backend serio (Spring), IA (FastAPI), frontend moderno, tests y despliegue. No hay una marca de plataforma separada ("GymFlow") visible en ningún sitio de cara al usuario; donde aparecía antes, ahora dice simplemente OlympusGYM.
 - Todo lo que sea nombres, testimonios, precios, fechas ("desde 1984") o cifras es **dato de ejemplo**. No debe presentarse como real: añade una etiqueta discreta "Datos de ejemplo / demo" en la web.
 
 ## Alcance del MVP (importante: es BÁSICO, no tiene que ser perfecto)
@@ -47,7 +46,7 @@ Un solo formulario de login. Tras entrar: `MEMBER` va a `/cuenta`, `OWNER` y `ST
 - **Diseño: oscuro por defecto**, con interruptor claro/oscuro. Al usuario le molesta el fondo blanco. Estilo "gimnasio de los de siempre con web viva": hierro, tiza, tipografía condensada, fotos en blanco y negro con grano, acento lima eléctrico y una **línea de pulso** (latido) como hilo conductor y como logo (el pulso forma una cima de montaña = Olimpo).
 - **Debe ser original**: no copiar la web de ningún gimnasio real (la usada como referencia de estructura fue la de un gimnasio de cadena; no copiar su marca, textos ni imágenes).
 - **Tono**: español llano y directo, como habla un gimnasio de verdad. Nada de jerga tipo "telemetría", "algoritmo", "neural", "SNC", "RPE", "biomecánica avanzada". Está explícitamente prohibido (ver lista en `DESIGN.md`).
-- **Nada inventado como producto real**: no existe "GymFlow Neural 3.1". Solo "GymFlow".
+- **Nada inventado como producto real**: no inventes nombres de producto grandilocuentes para la IA (del tipo "Neural 3.1"). El entrenador con IA se llama, sin más, "entrenador con IA" o "entrenador inteligente".
 - **El nombre OlympusGYM** es de demostración. Se recomienda comprobar que no coincide con un negocio real antes de publicarlo.
 
 ## Segundo proyecto (fuera de alcance aquí)

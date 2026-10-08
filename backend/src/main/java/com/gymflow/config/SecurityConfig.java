@@ -1,5 +1,7 @@
 package com.gymflow.config;
 
+import com.gymflow.auth.JwtAuthenticationFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -15,16 +17,24 @@ import org.springframework.security.web.authentication.www.BasicAuthenticationFi
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, TenantFilter tenantFilter) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter)
+            throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .cors(Customizer.withDefaults())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .addFilterBefore(tenantFilter, BasicAuthenticationFilter.class)
+            .addFilterBefore(jwtAuthenticationFilter, BasicAuthenticationFilter.class)
+            .exceptionHandling(ex -> ex.authenticationEntryPoint(
+                (request, response, authException) -> response.sendError(HttpServletResponse.SC_FORBIDDEN)))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
-                // TODO (Fase 1): /api/v1/auth/** público, resto con JWT y roles por tenant
+                .requestMatchers(HttpMethod.POST, "/api/v1/public/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                // Solo OWNER (p. ej. cambiar el plan de un socio, ver ingresos: LOGIC.md §2).
+                .requestMatchers("/api/v1/admin/owner/**").hasRole("OWNER")
+                // OWNER y STAFF (gestión de clases, socios, reservas).
+                .requestMatchers("/api/v1/admin/**").hasAnyRole("OWNER", "STAFF")
                 .anyRequest().authenticated());
         return http.build();
     }

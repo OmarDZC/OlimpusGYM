@@ -4,7 +4,9 @@ Contexto para Claude Code. Lee esto antes de tocar nada.
 
 ## Qué es el proyecto
 
-GymFlow: plataforma SaaS para gimnasios, proyecto de portfolio de un programador. Se demuestra con **OlympusGYM**, un gimnasio ficticio con web propia, área de socio, panel de gestión, reservas de clases con aforo, entrenador con IA y asistente de reservas con IA. Importan la calidad, los tests, el despliegue y que todo esté documentado.
+**OlympusGYM**: plataforma de gestión para gimnasios, proyecto de portfolio de un programador. Web propia, área de socio, panel de gestión, reservas de clases con aforo, entrenador con IA y asistente de reservas con IA. Importan la calidad, los tests, el despliegue y que todo esté documentado.
+
+> Nota de nombre: por dentro, parte del código (paquete Java `com.gymflow`, artefacto Maven, variables de entorno `GYMFLOW_*`) todavía usa el nombre de trabajo original del proyecto. Es un identificador técnico interno, no una marca visible; no lo uses en texto de cara al usuario, documentación nueva ni commits. Si en algún momento se quiere renombrar también eso, es un refactor aparte a decidir explícitamente.
 
 **Es un MVP básico: no tiene que quedar perfecto, pero sí funcionar y estar limpio.** Fuera de alcance (no lo construyas): tienda, varios centros, pulseras/NFC/QR, taquillas, control de acceso, newsletter, app nativa.
 
@@ -26,7 +28,7 @@ GymFlow: plataforma SaaS para gimnasios, proyecto de portfolio de un programador
 
 ## Decisiones ya tomadas (no las cambies sin avisar)
 
-- **Multi-tenancy en la arquitectura, un solo gimnasio en la práctica:** una BD, `tenant_id` en toda tabla de negocio, un tenant `olympusgym` creado por seed. El tenant sale del JWT, nunca de una cabecera del cliente. `TenantFilter` lee hoy `X-Tenant-Id` solo como **provisional**: sustituirlo en el Trozo 1.
+- **Multi-tenancy en la arquitectura, un solo gimnasio en la práctica:** una BD, `tenant_id` en toda tabla de negocio, un tenant `olympusgym` creado por seed. El tenant sale del JWT (`JwtAuthenticationFilter`), nunca de una cabecera del cliente; la cabecera provisional `X-Tenant-Id` se eliminó en el Trozo 1.
 - **Tres experiencias separadas:** web pública, `/cuenta` (socio), `/admin` (dueño y staff). Un login único con redirección por rol. La autorización se comprueba **en el servidor**, no solo ocultando botones.
 - **Monolito modular**, no microservicios, salvo el servicio de IA.
 - **Migraciones solo con Flyway** (`backend/src/main/resources/db/migration`). `ddl-auto` está en `validate`: nunca `update`.
@@ -55,7 +57,7 @@ cd frontend && npm run dev | npm run typecheck | npm run build
 
 ## Estado actual
 
-Trozo 0 completado: backend compila y sus tests pasan (`mvn test`, Testcontainers se omiten en local sin Docker, correrán en CI), servicio de IA con 3 tests en verde, frontend con `typecheck`/`build` en verde y base de diseño lista (tokens, fuentes, tema oscuro/claro, navegación superior, componentes base: botón, tarjeta, etiqueta, desplegable). CI mínima en GitHub Actions. Detalle completo en `docs/PROGRESS.md`. Pendiente: validar `docker compose config` real y `make infra` en una máquina con Docker. Siguiente: Trozo 1 (autenticación y roles).
+Trozo 0 y Trozo 1 completados. Autenticación con JWT (registro, login, `/auth/me`), roles (`OWNER`/`STAFF`/`MEMBER`) con permisos comprobados en el servidor, migración de planes y membresías, seed de datos de ejemplo (perfil `dev`/`demo`) y frontend con `/acceso`, guardas de ruta por rol y cierre de sesión. Detalle completo en `docs/PROGRESS.md`. Pendiente: Docker se está instalando en la máquina del dueño del proyecto; en cuanto esté listo, validar `docker compose config` real, levantar la infraestructura y correr los tests de Testcontainers que hoy se omiten en local (listados en PROGRESS.md). Siguiente: Trozo 2 (horario y reservas).
 
 ## Convenciones
 

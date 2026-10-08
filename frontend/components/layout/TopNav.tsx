@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
+import { cn } from "@/lib/cn";
+import { homeForRole } from "@/lib/roles";
 
 const navLinks = [
   { label: "Horario", href: "/horario" },
@@ -23,6 +26,42 @@ const classDisciplines = [
   { label: "Spinning", href: "/horario?tipo=spinning" },
   { label: "Halterofilia", href: "/horario?tipo=halterofilia" },
 ];
+
+/** Acceder/Apúntate cuando no hay sesión; enlace a su área + Salir cuando sí la hay. */
+function AuthActions({ stretch = false }: { stretch?: boolean }) {
+  const { status, user, logout } = useAuth();
+  const buttonClass = stretch ? "flex-1" : undefined;
+
+  if (status === "signed-in" && user) {
+    return (
+      <>
+        <Link
+          href={homeForRole(user.role)}
+          className={cn(
+            "whitespace-nowrap text-sm font-medium text-text-muted hover:text-text",
+            stretch && "flex-1 text-center",
+          )}
+        >
+          {user.role === "MEMBER" ? "Mi cuenta" : "Panel de gestión"}
+        </Link>
+        <Button variant="secondary" size="sm" onClick={logout} className={buttonClass}>
+          Salir
+        </Button>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Button href="/acceso" variant="secondary" size="sm" className={buttonClass}>
+        Acceder
+      </Button>
+      <Button href="/acceso?modo=registro" variant="primary" size="sm" className={buttonClass}>
+        Apúntate
+      </Button>
+    </>
+  );
+}
 
 /** Navegación superior sin barra lateral (DESIGN.md §4 y §8). Hamburguesa en móvil. */
 export function TopNav() {
@@ -50,12 +89,7 @@ export function TopNav() {
 
         <div className="hidden items-center gap-3 md:flex">
           <ThemeToggle />
-          <Button href="/acceso" variant="secondary" size="sm">
-            Acceder
-          </Button>
-          <Button href="/acceso?modo=registro" variant="primary" size="sm">
-            Apúntate
-          </Button>
+          <AuthActions />
         </div>
 
         <button
@@ -72,7 +106,7 @@ export function TopNav() {
       {mobileOpen && (
         <nav className="border-t border-border px-4 py-4 md:hidden" aria-label="Navegación móvil">
           <ul className="flex flex-col gap-1">
-            {[{ label: "Clases", href: "/horario" }, ...navLinks].map((link) => (
+            {navLinks.map((link) => (
               <li key={link.href}>
                 <Link
                   href={link.href}
@@ -86,12 +120,7 @@ export function TopNav() {
           </ul>
           <div className="mt-4 flex items-center gap-3">
             <ThemeToggle />
-            <Button href="/acceso" variant="secondary" size="sm" className="flex-1">
-              Acceder
-            </Button>
-            <Button href="/acceso?modo=registro" variant="primary" size="sm" className="flex-1">
-              Apúntate
-            </Button>
+            <AuthActions stretch />
           </div>
         </nav>
       )}

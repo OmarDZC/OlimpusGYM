@@ -51,6 +51,7 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-gymflow}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-gymflow}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-gymflow}

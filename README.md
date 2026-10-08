@@ -1,15 +1,15 @@
-# GymFlow
+# OlympusGYM
 
-Plataforma SaaS para gimnasios: socios y tarifas, reservas de clases con control de aforo y lista de espera, asistente de IA que reserva por chat y entrenador personal con IA. Se demuestra con **OlympusGYM**, un gimnasio ficticio con su web, área de socio y panel de gestión.
+Plataforma de gestión para gimnasios: socios y tarifas, reservas de clases con control de aforo y lista de espera, asistente de IA que reserva por chat y entrenador personal con IA. **OlympusGYM** es el gimnasio ficticio de demostración, con su web pública, área de socio y panel de gestión.
 
 Documentación del proyecto en `docs/`: `PROJECT_BRIEF.md` (alcance y decisiones), `LOGIC.md` (reglas y API), `DESIGN.md` (estilo), `ROADMAP.md` (orden de construcción) y `design/` (pantallas de referencia).
 
-> Estado: **esqueleto inicial (Fase 0)**. Los servicios arrancan y se comunican, pero todavía no hay funcionalidad de negocio. Mira `docs/ROADMAP.md` para el orden de construcción.
+> Estado: **Trozo 1 en curso (autenticación y roles)**. Mira `docs/PROGRESS.md` para el detalle y `docs/ROADMAP.md` para el orden de construcción.
 
 ## Cómo está montado
 
 ```
-gymflow/
+OlympusGYM/
 ├── backend/        Spring Boot 3 (Java 21): API principal, auth, reservas, pagos
 ├── ai-service/     FastAPI (Python): entrenador, asistente de reservas, RAG
 ├── frontend/       Next.js + TypeScript + Tailwind: panel del gimnasio y app del socio
