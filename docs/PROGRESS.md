@@ -13,6 +13,36 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 4b - Panel de gestión: frontend (2026-10-08)
+- Hecho:
+  - Referencia visual: `docs/design/v2/panel-gestion/` no existe. Solo hay `docs/design/reference-v1/panel-dueno-v1-con-sidebar/code.html` (sin `screen.png`, solo HTML/texto, marcado como "solo contenido de referencia" en `DESIGN.md`). Se usó únicamente para sacar ideas de contenido (qué tarjetas y textos tienen sentido en un resumen de gimnasio), nunca su maquetación: su barra lateral no se copió porque el encargo pedía explícitamente navegación superior sin barra lateral, y se excluyeron secciones/jerga fuera de alcance de esa referencia ("Tienda", "Ajustes", "Telemetría de Rendimiento", "Algoritmo IA"/"Modelo IA").
+  - `AdminNav` (navegación superior, sin barra lateral): 4 enlaces (Resumen, Clases, Socios, Reservas), nombre del usuario y, debajo, una etiqueta con el rol ("Dueño" o "Staff"), y un círculo con las iniciales.
+  - `/admin` (resumen): tarjetas de socios activos, clases de hoy, ocupación de hoy, e ingresos del mes (esta última solo se pinta si el backend la devuelve, es decir solo para OWNER); lista de "Socios que conviene contactar" con enlace `mailto:` a cada uno.
+  - `/admin/clases`: formulario para crear una clase (nombre, disciplina, sala, inicio/fin, aforo, semanas a repetir) y listado de clases con botón "Cancelar clase" (avisa a los socios con reserva, vía el endpoint del Trozo 4a).
+  - `/admin/socios`: listado de socios; el precio de la tarifa y el control para cambiarla solo se muestran si el usuario es OWNER (si es STAFF, aparece el texto "El precio de cada tarifa solo lo ve el dueño.").
+  - `/admin/reservas`: listado de reservas activas con botón "Cancelar" y el texto "Como personal del gimnasio puedes cancelar la reserva de cualquier socio, sin el límite de 2 horas." (sin mención al límite de 2 horas que sí aplica al socio en `/cuenta`).
+  - Menús: dueño y staff ven las mismas 4 pestañas (LOGIC.md §2 da a STAFF acceso a clases/socios/reservas igual que a OWNER); lo que cambia por rol es el contenido dentro de cada pantalla (ingresos, precios, cambio de tarifa), no la lista de pestañas. Documentado en un comentario en `AdminNav.tsx`.
+  - `lib/api.ts`: tipos y funciones nuevas para los seis endpoints del Trozo 4a, siguiendo el patrón ya existente (`throwProblem`/`ApiError`).
+  - Verificado de verdad en el navegador contra el backend en Docker:
+    - Como OWNER (Javier M.): las 4 tarjetas del resumen incluido "Ingresos del mes", etiqueta "Dueño" bajo el nombre; cancelada una clase desde `/admin/clases` (desaparece de la lista); `/admin/socios` con precios y selector de tarifa visibles; `/admin/reservas` con botones de cancelar.
+    - Como STAFF (Marta Gómez): la tarjeta "Ingresos del mes" no aparece; en `/admin/socios` no se ve ni el precio ni el selector de tarifa, solo el aviso de que eso es cosa del dueño.
+    - Como MEMBER (Carlos): al entrar a mano en `/admin`, la guarda de ruta (`RequireRole`) redirige de vuelta a `/cuenta` (la autorización real ya la exige el servidor desde el Trozo 4a; esto es solo la comprobación de que el cliente no deja ver la pantalla ni un instante).
+    - Sin errores de consola reales en ninguno de los tres casos (solo 404 esperados de rutas futuras que la navegación precarga, como `/entrenador-ia` o `/tarifas`, que todavía no existen).
+- Decisiones / simplificaciones:
+  - No se construyó una página de detalle por socio (`/admin/socios/{id}`): el backend la expone (`GET /admin/members/{id}`) pero el encargo de este trozo no pedía esa pantalla y el listado ya cubre lo esencial (nombre, correo, tarifa, precio si corresponde).
+  - La señal "canceló varias reservas seguidas" que aparecía en la referencia de texto no se implementó: el backend del Trozo 4a solo calcula "socios que conviene contactar" por ausencia de reservas en 14 días (decisión ya tomada y anotada en la entrada del Trozo 4a), así que el frontend no tiene ese dato que mostrar.
+  - `/admin/reservas` filtra en el cliente a reservas `BOOKED`/`WAITLIST`: el backend devuelve también historial (`CANCELLED`, `ATTENDED`, `NO_SHOW`) pero no tiene sentido ofrecer "Cancelar" sobre una reserva que ya no está activa.
+- Pendiente:
+  - Nada bloqueante para este trozo.
+- Cómo probarlo:
+  - `docker compose up -d`, entrar en `/acceso` como `javier@olympusgym.test` (OWNER) o `marta@olympusgym.test` (STAFF), contraseña `Demo1234!`, y recorrer `/admin`, `/admin/clases`, `/admin/socios`, `/admin/reservas`.
+  - Entrar como `carlos@olympusgym.test` (MEMBER) y comprobar que `/admin` redirige a `/cuenta`.
+- Tests:
+  - `npm run typecheck` y `npm run build`: sin errores, 15 páginas generadas.
+  - Sin tests automáticos de frontend en este trozo (no los hay en ningún trozo anterior del frontend); la verificación fue manual en el navegador contra el backend real, descrita arriba.
+
+---
+
 ### Trozo 4a - Panel de gestión: backend (2026-10-08)
 - Hecho:
   - Antes de empezar: comprobado el resultado de la CI de GitHub Actions del commit del Trozo 3 (en verde, los tres jobs). Nada que arreglar.

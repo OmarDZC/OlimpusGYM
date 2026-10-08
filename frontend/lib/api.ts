@@ -219,3 +219,135 @@ export async function fetchStreak(token: string): Promise<Streak> {
   if (!response.ok) await throwProblem(response);
   return response.json();
 }
+
+// ---- Panel de gestión (Trozo 4) ----
+
+export type MemberToContact = {
+  userId: string;
+  fullName: string;
+  email: string;
+  lastBookingAt: string | null;
+};
+
+export type AdminSummary = {
+  activeMembers: number;
+  todaySessions: number;
+  todayBookedSeats: number;
+  todayCapacity: number;
+  monthlyRevenueCents: number | null;
+  membersToContact: MemberToContact[];
+};
+
+export async function fetchAdminSummary(token: string): Promise<AdminSummary> {
+  const response = await fetch(`${API_URL}/api/v1/admin/summary`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function fetchAdminSessions(
+  token: string,
+  params: { from?: string; to?: string } = {},
+): Promise<ScheduleSession[]> {
+  const query = new URLSearchParams();
+  if (params.from) query.set("from", params.from);
+  if (params.to) query.set("to", params.to);
+  const response = await fetch(`${API_URL}/api/v1/admin/sessions?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function createAdminSession(
+  token: string,
+  input: {
+    name: string;
+    discipline: string;
+    description?: string;
+    coachUserId?: string;
+    room: string;
+    startsAt: string;
+    endsAt: string;
+    capacity: number;
+    repeatWeeks?: number;
+  },
+): Promise<ScheduleSession[]> {
+  const response = await fetch(`${API_URL}/api/v1/admin/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function cancelAdminSession(token: string, sessionId: string): Promise<{ cancelledBookings: number }> {
+  const response = await fetch(`${API_URL}/api/v1/admin/sessions/${sessionId}/cancel`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export type AdminMember = {
+  userId: string;
+  fullName: string;
+  email: string;
+  planCode: PlanCode | null;
+  planName: string | null;
+  membershipStatus: string | null;
+  priceCents: number | null;
+};
+
+export async function fetchAdminMembers(token: string): Promise<AdminMember[]> {
+  const response = await fetch(`${API_URL}/api/v1/admin/members`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function changeMemberPlan(token: string, memberId: string, planCode: PlanCode): Promise<AdminMember> {
+  const response = await fetch(`${API_URL}/api/v1/admin/members/${memberId}/plan`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ planCode }),
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export type AdminBooking = {
+  bookingId: string;
+  userId: string;
+  memberName: string;
+  sessionName: string;
+  sessionStartsAt: string;
+  status: BookingStatus;
+  waitlistPosition: number | null;
+};
+
+export async function fetchAdminBookings(
+  token: string,
+  params: { from?: string; to?: string } = {},
+): Promise<AdminBooking[]> {
+  const query = new URLSearchParams();
+  if (params.from) query.set("from", params.from);
+  if (params.to) query.set("to", params.to);
+  const response = await fetch(`${API_URL}/api/v1/admin/bookings?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function cancelAdminBooking(token: string, bookingId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/v1/admin/bookings/${bookingId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+}
