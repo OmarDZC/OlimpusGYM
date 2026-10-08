@@ -64,4 +64,31 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
         order by b.createdAt asc
         """)
     List<Booking> findActiveForUser(@Param("tenantId") UUID tenantId, @Param("userId") UUID userId);
+
+    @Query("""
+        select b from Booking b
+        where b.sessionId = :sessionId
+          and b.status in (com.gymflow.booking.BookingStatus.BOOKED, com.gymflow.booking.BookingStatus.WAITLIST)
+        """)
+    List<Booking> findActiveBySessionId(@Param("sessionId") UUID sessionId);
+
+    /** Última reserva de verdad (no en espera) del socio: para "socios que conviene contactar". */
+    @Query("""
+        select max(b.createdAt) from Booking b
+        where b.tenantId = :tenantId and b.userId = :userId
+          and b.status in (com.gymflow.booking.BookingStatus.BOOKED, com.gymflow.booking.BookingStatus.ATTENDED)
+        """)
+    Optional<Instant> findLastBookingCreatedAt(@Param("tenantId") UUID tenantId, @Param("userId") UUID userId);
+
+    @Query("""
+        select b from Booking b
+        where b.tenantId = :tenantId
+          and b.sessionId in (
+            select s.id from ClassSession s
+            where s.tenantId = :tenantId and s.startsAt >= :from and s.startsAt < :to
+          )
+        order by b.createdAt desc
+        """)
+    List<Booking> findByTenantAndSessionWindow(
+            @Param("tenantId") UUID tenantId, @Param("from") Instant from, @Param("to") Instant to);
 }

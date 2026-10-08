@@ -46,6 +46,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
                 // Solo OWNER (p. ej. cambiar el plan de un socio, ver ingresos: LOGIC.md §2).
                 .requestMatchers("/api/v1/admin/owner/**").hasRole("OWNER")
+                .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/members/*/plan").hasRole("OWNER")
                 // OWNER y STAFF (gestión de clases, socios, reservas).
                 .requestMatchers("/api/v1/admin/**").hasAnyRole("OWNER", "STAFF")
                 .anyRequest().authenticated());

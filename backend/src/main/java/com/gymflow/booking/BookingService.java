@@ -105,24 +105,74 @@ public class BookingService {
         return booking;
     }
 
+    /** El propio socio cancela su reserva: exige que sea suya y respeta el límite de 2 horas. */
     @Transactional
     public void cancel(UUID tenantId, UUID userId, UUID bookingId) {
         Booking booking = bookings.findByIdAndTenantId(bookingId, tenantId)
                 .filter(b -> b.getUserId().equals(userId))
                 .orElseThrow(() -> new BookingNotFoundException(bookingId));
 
-        if (booking.getStatus() != BookingStatus.BOOKED && booking.getStatus() != BookingStatus.WAITLIST) {
-            throw new BookingNotAllowedException("Esta reserva ya no está activa.");
-        }
-
         ClassSession session = sessions.lockById(tenantId, booking.getSessionId())
                 .orElseThrow(() -> new SessionNotFoundException(booking.getSessionId()));
+
+        ensureCancellable(booking);
 
         Instant limit = session.getStartsAt().minus(CANCELLATION_WINDOW_HOURS, ChronoUnit.HOURS);
         if (!Instant.now().isBefore(limit)) {
             throw new CancellationWindowClosedException();
         }
 
+        performCancel(booking, session);
+    }
+
+    /**
+     * Staff/owner cancela la reserva de cualquier socio, sin el límite de 2 horas (LOGIC.md §5.3:
+     * "Staff/Owner pueden cancelar cuando quieran"). No comprueba de quién es la reserva: eso lo
+     * hace el filtro de rol en {@code SecurityConfig}, no este método.
+     */
+    @Transactional
+    public void cancelAsStaff(UUID tenantId, UUID bookingId) {
+        Booking booking = bookings.findByIdAndTenantId(bookingId, tenantId)
+                .orElseThrow(() -> new BookingNotFoundException(bookingId));
+
+        ClassSession session = sessions.lockById(tenantId, booking.getSessionId())
+                .orElseThrow(() -> new SessionNotFoundException(booking.getSessionId()));
+
+        ensureCancellable(booking);
+        performCancel(booking, session);
+    }
+
+    /**
+     * Staff/owner cancela la sesión completa: todas las reservas activas pasan a CANCELLED y se
+     * avisa a los socios afectados (LOGIC.md §5.5). Devuelve cuántas reservas se vieron afectadas.
+     */
+    @Transactional
+    public int cancelSession(UUID tenantId, UUID sessionId) {
+        ClassSession session = sessions.lockById(tenantId, sessionId)
+                .orElseThrow(() -> new SessionNotFoundException(sessionId));
+
+        if (session.getStatus() == SessionStatus.CANCELLED) {
+            return 0;
+        }
+
+        session.cancel();
+        sessions.save(session);
+
+        var activeBookings = bookings.findActiveBySessionId(sessionId);
+        activeBookings.forEach(Booking::cancel);
+        bookings.saveAll(activeBookings);
+        notifier.sessionCancelled(session, activeBookings.size());
+
+        return activeBookings.size();
+    }
+
+    private void ensureCancellable(Booking booking) {
+        if (booking.getStatus() != BookingStatus.BOOKED && booking.getStatus() != BookingStatus.WAITLIST) {
+            throw new BookingNotAllowedException("Esta reserva ya no está activa.");
+        }
+    }
+
+    private void performCancel(Booking booking, ClassSession session) {
         BookingStatus previousStatus = booking.getStatus();
         Integer previousPosition = booking.getWaitlistPosition();
         booking.cancel();

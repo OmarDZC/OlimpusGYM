@@ -115,4 +115,45 @@ public class ClassSession {
     public SessionStatus getStatus() {
         return status;
     }
+
+    /** Staff/owner cancela la sesión (LOGIC.md §5.5): se usa junto con cancelar cada reserva activa. */
+    public void cancel() {
+        this.status = SessionStatus.CANCELLED;
+    }
+
+    /** Edición parcial (PATCH): cada parámetro nulo deja el valor actual sin tocar. */
+    public void applyUpdate(
+            String name,
+            String discipline,
+            String description,
+            UUID coachUserId,
+            String room,
+            Instant startsAt,
+            Instant endsAt,
+            Integer capacity) {
+        if (name != null) {
+            this.name = name;
+        }
+        if (discipline != null) {
+            this.discipline = discipline;
+        }
+        if (description != null) {
+            this.description = description;
+        }
+        if (coachUserId != null) {
+            this.coachUserId = coachUserId;
+        }
+        if (room != null) {
+            this.room = room;
+        }
+        if (startsAt != null) {
+            this.startsAt = startsAt;
+        }
+        if (endsAt != null) {
+            this.endsAt = endsAt;
+        }
+        if (capacity != null) {
+            this.capacity = capacity;
+        }
+    }
 }

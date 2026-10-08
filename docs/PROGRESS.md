@@ -13,6 +13,34 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 4a - Panel de gestión: backend (2026-10-08)
+- Hecho:
+  - Antes de empezar: comprobado el resultado de la CI de GitHub Actions del commit del Trozo 3 (en verde, los tres jobs). Nada que arreglar.
+  - Paquete `admin` nuevo:
+    - `GET /admin/summary`: socios activos, clases de hoy y su ocupación, ingresos del mes (suma del precio de las membresías `ACTIVE`, **solo para OWNER**, `null` para STAFF), y "socios que conviene contactar" (sin una reserva de verdad en los últimos 14 días).
+    - `GET/POST/PATCH /admin/sessions`, `POST /admin/sessions/{id}/cancel` con repetición semanal (`repeatWeeks` en la creación).
+    - `GET /admin/members`, `GET /admin/members/{id}` (el precio de la tarifa solo se ve siendo OWNER, LOGIC.md §2), `PATCH /admin/members/{id}/plan` (**solo OWNER**).
+    - `GET /admin/bookings`, `DELETE /admin/bookings/{id}` (cancela sin el límite de 2 horas).
+    - Las dos reglas aplazadas del Trozo 2, en `BookingService`: `cancelSession` (staff/owner cancela la sesión completa, todas las reservas activas pasan a `CANCELLED` y se avisa a cada socio con `Notifier.sessionCancelled`) y `cancelAsStaff` (cancela la reserva de cualquier socio sin el límite de 2 horas).
+  - `SecurityConfig`: `PATCH /admin/members/{id}/plan` exige `OWNER` explícitamente (antes de la regla general de `/admin/**` para `OWNER`+`STAFF`, que si no, la taparía).
+  - Tests de permisos y aislamiento (`AdminHttpTest`, 8 casos): socio con 403 en `/admin/summary`, staff con 403 al intentar cambiar el plan de un socio, el dueño sí puede, los ingresos solo salen para el dueño, el listado de socios de un gimnasio nunca enseña los de otro, cancelar una sesión completa avisa a las reservas activas (confirmadas y en espera), y staff cancelando una reserva a 30 minutos de empezar (el socio ya no podría).
+  - **Bug real encontrado y arreglado al probar con datos reales en Docker**: `GET /api/v1/public/schedule?discipline=Pilates` (y cualquier filtro que devolviera solo sesiones sin entrenador asignado) rompía con un `NullPointerException` que además, al pasar por el filtro de seguridad, se veía desde fuera como un 403 engañoso (no como un 500). La causa: `ScheduleService` montaba el mapa de nombres de entrenador con `Map.of()` cuando ninguna sesión tenía entrenador, y `Map.of()` (mapa inmutable de Java) lanza excepción al consultarlo con una clave `null` — exactamente lo que pasa con una sesión sin entrenador (`coachUserId` es `null`). Arreglado usando siempre un `HashMap` normal, que sí admite `null`. Añadido un test de regresión.
+- Decisiones / simplificaciones:
+  - "Socios que conviene contactar" solo mira si llevan 14 días sin una reserva de verdad (`BOOKED`/`ATTENDED`); LOGIC.md también menciona "varias cancelaciones" como motivo, pero no lo conté para no complicar la consulta sin que el roadmap lo pidiera con detalle.
+  - `GET /admin/sessions` reutiliza el mismo `ScheduleService` que el horario público, que solo devuelve sesiones `SCHEDULED`: una sesión ya cancelada desaparece también de esta vista de gestión. Para este MVP no hace falta volver a gestionar algo que ya se canceló.
+  - Cambiar de tarifa (`PATCH /admin/members/{id}/plan`) actualiza la membresía activa en el sitio (no crea una fila nueva ni guarda histórico de tarifas anteriores): es la forma más simple de cumplir "cambiar el plan de un socio" sin inventar un modelo de histórico que LOGIC.md no pide.
+  - No se ha construido `GET|POST /admin/staff` (gestión de personal): LOGIC.md lo lista como solo-OWNER, pero ni el roadmap ni el encargo de este trozo lo pedían explícitamente; queda fuera.
+- Pendiente:
+  - Nada bloqueante para este trozo.
+- Cómo probarlo:
+  - Backend: `cd backend && mvn test`.
+  - De verdad: `docker compose up -d`, entrar como `javier@olympusgym.test` (OWNER) o `marta@olympusgym.test` (STAFF) / `Demo1234!`, y llamar a `/api/v1/admin/summary`, `/api/v1/admin/members`, `/api/v1/admin/sessions` con el token.
+- Tests:
+  - `mvn test`: BUILD SUCCESS, 41/41 en verde (8 nuevos de `AdminHttpTest`).
+  - Probado también a mano contra la base de datos real en Docker: resumen como OWNER y STAFF, listado de socios con y sin precio, crear una sesión con repetición semanal (2 copias, 7 días de diferencia), cambiar de tarifa y revertir, cancelar una sesión completa.
+
+---
+
 ### Trozo 3 - Mi cuenta (2026-10-08)
 - Hecho:
   - Antes de empezar: comprobado el resultado de la CI de GitHub Actions del commit del Trozo 2 (repo privado, se consultó con la API de GitHub usando la credencial de git ya guardada en la máquina, sin abrir sesión en el navegador). Los tres jobs (backend, IA, frontend) en verde, incluidos los tests de Testcontainers y el de concurrencia. Nada que arreglar.

@@ -13,4 +13,7 @@ public interface Notifier {
     void promotedFromWaitlist(Booking booking, ClassSession session);
 
     void bookingCancelled(Booking booking, ClassSession session);
+
+    /** Staff/owner cancela toda la sesión (LOGIC.md §5.5): se avisa a todos los socios afectados. */
+    void sessionCancelled(ClassSession session, int affectedBookings);
 }

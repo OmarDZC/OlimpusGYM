@@ -36,4 +36,11 @@ public class LogNotifier implements Notifier {
                 "[notificacion] Reserva cancelada: usuario={} sesion='{}' ({})",
                 booking.getUserId(), session.getName(), session.getId());
     }
+
+    @Override
+    public void sessionCancelled(ClassSession session, int affectedBookings) {
+        log.info(
+                "[notificacion] Sesion cancelada por el gimnasio: '{}' ({}), avisadas {} reservas activas",
+                session.getName(), session.getId(), affectedBookings);
+    }
 }

@@ -83,11 +83,14 @@ public class ScheduleService {
                 .toList();
     }
 
+    /**
+     * Devuelve siempre un {@link HashMap} normal, nunca {@code Map.of()}: una sesión sin
+     * entrenador tiene {@code coachUserId == null}, y el mapa inmutable de {@code Map.of()}
+     * lanza NullPointerException al consultarlo con una clave null (lo hacía incluso estando
+     * vacío). HashMap sí admite null como clave y devuelve null sin más.
+     */
     private Map<UUID, String> coachNames(List<UUID> coachIds) {
         List<UUID> distinctIds = coachIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
-        if (distinctIds.isEmpty()) {
-            return Map.of();
-        }
         Map<UUID, String> result = new HashMap<>();
         for (User user : users.findAllById(distinctIds)) {
             result.put(user.getId(), user.getFullName());

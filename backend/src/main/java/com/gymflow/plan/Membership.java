@@ -47,6 +47,11 @@ public class Membership {
         this.startedAt = startedAt;
     }
 
+    /** Cambio de tarifa (solo OWNER, LOGIC.md §6). Se cambia la membresía en sitio, sin crear una nueva. */
+    public void changePlan(UUID newPlanId) {
+        this.planId = newPlanId;
+    }
+
     public UUID getId() {
         return id;
     }
