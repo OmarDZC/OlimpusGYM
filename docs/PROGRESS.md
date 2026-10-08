@@ -15,7 +15,7 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ### Trozo 1 - Autenticación y roles (2026-10-08)
 - Hecho:
-  - Nombre del proyecto: a partir de ahora todo lo nuevo (docs, texto de cara al usuario, commits) usa **OlympusGYM**, no "GymFlow". Corregido `README.md`. Los identificadores técnicos internos que ya existían (paquete Java `com.gymflow`, artefacto Maven, variables `GYMFLOW_*`) se dejaron sin tocar por ahora: cambiarlos es un refactor grande aparte (ver "Dudas" más abajo).
+  - Nombre del proyecto: en esta sesión cambié por error el README y la documentación para que dijeran solo "OlympusGYM" en todas partes. Queda corregido: tal y como dice `PROJECT_BRIEF.md`, **GymFlow es la plataforma** (el software, este repositorio) y **OlympusGYM es el gimnasio ficticio de demostración** que la usa. En la interfaz, la marca visible es siempre OlympusGYM; "GymFlow" solo aparece en letra pequeña ("Powered by GymFlow") y en la sección del entrenador con IA. Los identificadores técnicos internos (paquete Java `com.gymflow`, artefacto Maven, variables `GYMFLOW_*`, paquete npm) se quedan como están: no hay que renombrarlos.
   - Backend:
     - Migración `V2__plans_memberships.sql`: tablas `plans` y `memberships` (LOGIC.md §4).
     - Entidades y repositorios: `User`/`Role` (paquete `auth`), `Plan`/`PlanCode`/`Membership`/`MembershipStatus` (paquete `plan`).
@@ -47,7 +47,7 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
     - Validar `docker compose config` con el comando real (aquí solo se comprobó que el YAML es sintácticamente válido con un script).
     - Levantar `make infra` (o `docker compose up` directo si `make` no está disponible) y arrancar los tres servicios juntos.
   - No se ha probado el flujo de registro/login de verdad contra una base de datos real (sin Docker no hay Postgres en esta máquina): la cobertura de hoy es el compilado + los tests unitarios que no necesitan BD + la revisión manual del código.
-  - Pregunta para el dueño del proyecto: ¿también quieres renombrar los identificadores técnicos internos (paquete Java `com.gymflow` → `com.olympusgym`, artefacto Maven `gymflow-backend`, variables de entorno `GYMFLOW_*`, nombre del paquete npm `gymflow-frontend`) o se quedan como están? Es un cambio grande (toca casi todos los ficheros del backend) y no lo he hecho sin que lo confirmes.
+  - Resuelto: los identificadores técnicos internos (paquete Java `com.gymflow`, artefacto Maven `gymflow-backend`, variables `GYMFLOW_*`, paquete npm `gymflow-frontend`) se quedan como están. No hay que renombrarlos; `GymFlow` siempre fue el nombre correcto de la plataforma, según `PROJECT_BRIEF.md`.
 - Cómo probarlo:
   - Backend: `cd backend && mvn test`. Con Docker ya funcionando, los tests de Testcontainers dejarán de omitirse automáticamente.
   - Arrancar de verdad (necesita Docker): `docker compose up -d postgres` y luego `cd backend && mvn spring-boot:run` (perfil `dev` activo por defecto en `application.yml` si se exporta `SPRING_PROFILES_ACTIVE=dev`, o directamente con Docker Compose que ya lo trae). Luego:
@@ -59,6 +59,30 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 - Tests:
   - `mvn test`: BUILD SUCCESS. 14 tests: 4 en verde (`JwtServiceTest` x2, `TenantContextTest` x2, sin BD), 10 omitidos por falta de Docker (`AuthAndSecurityTest` x7, `GymflowIntegrationTest` x3).
   - Frontend: `npm run typecheck` y `npm run build` en verde (incluye las páginas nuevas `/acceso`, `/cuenta`, `/admin`).
+
+#### Verificación con Docker ya instalado (mismo día, continuación)
+- Hecho:
+  - `docker compose config`: válido con el comando real (antes solo se había comprobado la sintaxis YAML con un script).
+  - Infraestructura: `docker compose up -d postgres redis rabbitmq`. Los tres servicios llegan a `healthy` en unos 20 segundos.
+  - `mvn test` con Docker Desktop 4.94.0 (motor 29.8.2) real: al principio los 10 tests de Testcontainers seguían fallando, pero con un error nuevo (antes se omitían limpiamente, ahora Testcontainers no conseguía hablar con el motor de Docker por el pipe con nombre de Windows, aunque `docker` y `docker compose` funcionaban bien). Comprobado con una petición HTTP directa al pipe: el motor respondía perfecto: el fallo estaba en la librería interna de Testcontainers 1.21.3, no en Docker. Arreglado subiendo Testcontainers a la 1.21.4 (`<testcontainers.version>` en `backend/pom.xml`, Spring Boot 3.5.6 trae 1.21.3 por defecto). Con eso, **los 14 tests pasan, 0 omitidos**, incluidos los 10 que antes no se podían ejecutar en esta máquina.
+  - De paso, se quitó el log "Using generated security password" de Spring Boot en cada arranque (no usamos ese mecanismo de login, solo JWT propio): se excluyó `UserDetailsServiceAutoConfiguration` en `application.yml`.
+  - `docker compose up --build -d`: las tres imágenes se construyen bien. El contenedor del frontend falló la primera vez porque el puerto 3000 ya lo tenía ocupado un servidor de pruebas anterior de esta sesión; liberado y arrancado sin problema.
+  - Backend, servicio de IA y frontend responden: `GET /api/v1/public/ping`, `GET /health` y `http://localhost:3000` devuelven 200.
+  - Log del backend confirmado: `The following 1 profile is active: "dev"` y el seed se ejecuta (`tenant=olympusgym, usuarios=15, planes=3`).
+  - **Fallo real encontrado y arreglado: faltaba configurar CORS.** Con todo el stack en Docker, el formulario de `/acceso` daba "No se pudo conectar con el servidor" al intentar login/registro, aunque `curl` contra el backend funcionaba perfectamente. Causa: el frontend (puerto 3000) y el backend (puerto 8080) son orígenes distintos; sin una configuración de CORS explícita, el navegador bloquea la petición (algo que `curl` y los tests con `MockMvc` no detectan, porque ninguno de los dos aplica la política CORS del navegador). Arreglado añadiendo un `CorsConfigurationSource` en `SecurityConfig` que permite el origen del frontend (`gymflow.cors.allowed-origins`, variable de entorno `GYMFLOW_CORS_ALLOWED_ORIGINS`, por defecto `http://localhost:3000`).
+  - Con el arreglo, probado de verdad en el navegador contra la base de datos real:
+    - Login como socio (`carlos@olympusgym.test`) → redirige a `/cuenta`, muestra su nombre.
+    - Cerrar sesión → vuelve a `/acceso`, la barra superior vuelve a mostrar "Acceder/Apúntate".
+    - Login como dueño (`javier@olympusgym.test`) → redirige a `/admin`, muestra "Javier M." con la etiqueta "Dueño".
+    - Registro de una cuenta nueva (`nueva.socia@olympusgym.test`, tarifa Completa) → crea la cuenta, inicia sesión sola y redirige a `/cuenta`. Verificado también directamente en Postgres (`docker compose exec postgres psql`): el usuario y su membresía `ACTIVE` quedaron guardados correctamente.
+    - Un socio que visita `/admin` a mano es redirigido de vuelta a `/cuenta` (guarda de ruta en el cliente).
+  - `mvn test` repetido tras el arreglo de CORS: sigue en verde, 14/14 (el cambio no afecta a los tests, que usan `MockMvc` y no pasan por el navegador).
+- Decisiones / simplificaciones (añadidas):
+  - El bloqueo de CORS es un fallo que solo aparece con un navegador real; por eso no lo detectaron los tests automáticos (`MockMvc`) ni las pruebas con `curl` de la ronda anterior. Queda como recordatorio: antes de dar por bueno un flujo de frontend-a-backend, probarlo también en el navegador contra servicios reales, no solo con peticiones HTTP sueltas.
+  - La versión de Testcontainers quedó fijada en `1.21.4` en vez de la que trae Spring Boot 3.5.6 por defecto (1.21.3), por la incompatibilidad con el motor de Docker Desktop 4.94 en Windows. Anotado en un comentario en `backend/pom.xml`.
+- Pendiente: nada relacionado con Docker. El stack completo (Postgres, Redis, RabbitMQ, backend, servicio de IA, frontend) está levantado y probado de verdad, incluido el flujo de alta/login/redirección por rol contra la base de datos.
+- Cómo probarlo: `docker compose up -d`, abrir `http://localhost:3000/acceso` y entrar con cualquier cuenta del seed (contraseña `Demo1234!`) o registrar una nueva.
+- Tests: `mvn test` → BUILD SUCCESS, 14/14 en verde, 0 omitidos.
 
 ---
 

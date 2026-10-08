@@ -1,6 +1,11 @@
 spring:
   application:
     name: gymflow-backend
+  # No usamos el UserDetailsService de Spring Security (la autenticación es JWT propia,
+  # ver com.gymflow.auth): sin esto, Boot genera un usuario y contraseña aleatorios en
+  # cada arranque y los imprime en el log, que nadie usa nunca.
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   datasource:
     url: jdbc:postgresql://localhost:5432/gymflow
     username: gymflow
@@ -45,3 +50,7 @@ gymflow:
     expiration-minutes: 60
   ai:
     base-url: ${GYMFLOW_AI_BASE_URL:http://localhost:8000}
+  cors:
+    # Orígenes del frontend con permiso de llamar a la API (coma-separados). En despliegue,
+    # cambia esto a la URL pública real del frontend.
+    allowed-origins: ${GYMFLOW_CORS_ALLOWED_ORIGINS:http://localhost:3000}

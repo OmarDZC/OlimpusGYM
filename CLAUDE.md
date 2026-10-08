@@ -4,9 +4,7 @@ Contexto para Claude Code. Lee esto antes de tocar nada.
 
 ## Qué es el proyecto
 
-**OlympusGYM**: plataforma de gestión para gimnasios, proyecto de portfolio de un programador. Web propia, área de socio, panel de gestión, reservas de clases con aforo, entrenador con IA y asistente de reservas con IA. Importan la calidad, los tests, el despliegue y que todo esté documentado.
-
-> Nota de nombre: por dentro, parte del código (paquete Java `com.gymflow`, artefacto Maven, variables de entorno `GYMFLOW_*`) todavía usa el nombre de trabajo original del proyecto. Es un identificador técnico interno, no una marca visible; no lo uses en texto de cara al usuario, documentación nueva ni commits. Si en algún momento se quiere renombrar también eso, es un refactor aparte a decidir explícitamente.
+GymFlow: plataforma SaaS para gimnasios, proyecto de portfolio de un programador. Se demuestra con **OlympusGYM**, un gimnasio ficticio con web propia, área de socio, panel de gestión, reservas de clases con aforo, entrenador con IA y asistente de reservas con IA. Importan la calidad, los tests, el despliegue y que todo esté documentado.
 
 **Es un MVP básico: no tiene que quedar perfecto, pero sí funcionar y estar limpio.** Fuera de alcance (no lo construyas): tienda, varios centros, pulseras/NFC/QR, taquillas, control de acceso, newsletter, app nativa.
 
@@ -57,7 +55,7 @@ cd frontend && npm run dev | npm run typecheck | npm run build
 
 ## Estado actual
 
-Trozo 0 y Trozo 1 completados. Autenticación con JWT (registro, login, `/auth/me`), roles (`OWNER`/`STAFF`/`MEMBER`) con permisos comprobados en el servidor, migración de planes y membresías, seed de datos de ejemplo (perfil `dev`/`demo`) y frontend con `/acceso`, guardas de ruta por rol y cierre de sesión. Detalle completo en `docs/PROGRESS.md`. Pendiente: Docker se está instalando en la máquina del dueño del proyecto; en cuanto esté listo, validar `docker compose config` real, levantar la infraestructura y correr los tests de Testcontainers que hoy se omiten en local (listados en PROGRESS.md). Siguiente: Trozo 2 (horario y reservas).
+Trozo 0 y Trozo 1 completados y verificados con Docker real. Autenticación con JWT (registro, login, `/auth/me`), roles (`OWNER`/`STAFF`/`MEMBER`) con permisos comprobados en el servidor, migración de planes y membresías, seed de datos de ejemplo (perfil `dev`/`demo`) y frontend con `/acceso`, guardas de ruta por rol y cierre de sesión. `docker compose up` levanta los seis servicios; los 14 tests del backend pasan (incluidos los de Testcontainers, que ya no se omiten) y el flujo de alta/login/redirección por rol se probó de verdad contra Postgres. CORS configurado en `SecurityConfig` (`gymflow.cors.allowed-origins`): sin esto, cualquier llamada del frontend al backend falla en el navegador aunque funcione por `curl`. Detalle completo en `docs/PROGRESS.md`. Siguiente: Trozo 2 (horario y reservas).
 
 ## Convenciones
 
