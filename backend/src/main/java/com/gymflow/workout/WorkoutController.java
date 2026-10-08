@@ -1,9 +1,11 @@
 package com.gymflow.workout;
 
 import com.gymflow.common.TenantContext;
+import com.gymflow.workout.dto.GenerateWorkoutRequest;
 import com.gymflow.workout.dto.LogSetRequest;
 import com.gymflow.workout.dto.StreakResponse;
 import com.gymflow.workout.dto.TodayWorkoutResponse;
+import com.gymflow.workout.dto.WeeklyPlan;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -38,6 +40,11 @@ public class WorkoutController {
     public ResponseEntity<Void> logSet(Authentication authentication, @Valid @RequestBody LogSetRequest request) {
         workoutService.logSet(TenantContext.require(), userId(authentication), request);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/workout/generate")
+    public WeeklyPlan generate(Authentication authentication, @Valid @RequestBody GenerateWorkoutRequest request) {
+        return workoutService.generate(TenantContext.require(), userId(authentication), request);
     }
 
     private UUID userId(Authentication authentication) {

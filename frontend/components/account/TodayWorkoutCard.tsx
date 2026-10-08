@@ -1,6 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
@@ -67,8 +68,11 @@ export function TodayWorkoutCard() {
       <Card>
         <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Entrenamiento de hoy</p>
         <p className="mt-2 text-sm text-text-muted">
-          Todavía no tienes una rutina asignada. El entrenador con inteligencia artificial que genera tu plan
-          semanal llega en una fase posterior del proyecto.
+          Todavía no tienes una rutina asignada esta semana.{" "}
+          <Link href="/entrenador-ia" className="text-accent-text hover:underline">
+            Genera una con el entrenador IA
+          </Link>
+          .
         </p>
       </Card>
     );

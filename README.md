@@ -61,14 +61,28 @@ cd frontend && npm install && npm run dev
 
 O todo con Docker: `make up`.
 
-### LLM local gratuito (opcional)
+### Cambiar de proveedor de IA (entrenador y asistente)
+
+El servicio de IA habla con el LLM a través de un cliente compatible con OpenAI
+(`ai-service/app/llm.py`): cambiar de proveedor es solo cambiar tres variables en `.env`
+(ver `.env.example` para la lista completa), sin tocar código.
+
+| Proveedor | `LLM_BASE_URL` | `LLM_API_KEY` | `LLM_MODEL` |
+|---|---|---|---|
+| Ollama (por defecto, local y gratis) | `http://ollama:11434/v1` | `ollama` (no se usa, pero no puede ir vacío) | `llama3.1:8b` |
+| Groq (capa gratuita con límites) | `https://api.groq.com/openai/v1` | tu clave de Groq | un modelo disponible en tu cuenta |
+| Google Gemini (AI Studio) | `https://generativelanguage.googleapis.com/v1beta/openai/` | tu clave de Gemini | un modelo disponible en tu cuenta |
+| OpenRouter (modelos `:free`) | `https://openrouter.ai/api/v1` | tu clave de OpenRouter | un modelo con sufijo `:free` |
+
+Ollama local:
 
 ```bash
 docker compose --profile local-llm up -d ollama
 docker compose exec ollama ollama pull llama3.1:8b
 ```
 
-Para usar Groq, Gemini u OpenRouter, cambia `LLM_BASE_URL`, `LLM_API_KEY` y `LLM_MODEL` en `.env`.
+Los modelos gratuitos y sus límites cambian con el tiempo: consulta la web de cada proveedor
+antes de fijar `LLM_MODEL`.
 
 ## Tests
 

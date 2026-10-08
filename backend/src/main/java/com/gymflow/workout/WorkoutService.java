@@ -1,7 +1,15 @@
 package com.gymflow.workout;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gymflow.plan.Membership;
+import com.gymflow.plan.MembershipRepository;
+import com.gymflow.plan.MembershipStatus;
+import com.gymflow.plan.Plan;
+import com.gymflow.plan.PlanRepository;
+import com.gymflow.workout.ai.AiWeeklyPlan;
+import com.gymflow.workout.ai.TrainerClient;
 import com.gymflow.workout.dto.ExerciseProgress;
+import com.gymflow.workout.dto.GenerateWorkoutRequest;
 import com.gymflow.workout.dto.LogSetRequest;
 import com.gymflow.workout.dto.PlanDay;
 import com.gymflow.workout.dto.PlanExercise;
@@ -25,9 +33,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Rutina de la semana del socio (LOGIC.md §6): "hoy", constancia semanal y marcar series.
- * La generación real con IA llega en el Trozo 5; aquí solo se lee lo que ya exista
- * (por ahora, de seed/manual).
+ * Rutina de la semana del socio (LOGIC.md §6): generarla con IA, "hoy", constancia semanal y
+ * marcar series.
  */
 @Service
 public class WorkoutService {
@@ -37,12 +44,73 @@ public class WorkoutService {
 
     private final WorkoutPlanRepository plans;
     private final WorkoutLogRepository logs;
+    private final MembershipRepository memberships;
+    private final PlanRepository memberPlans;
+    private final TrainerClient trainerClient;
     private final ObjectMapper objectMapper;
 
-    public WorkoutService(WorkoutPlanRepository plans, WorkoutLogRepository logs, ObjectMapper objectMapper) {
+    public WorkoutService(
+            WorkoutPlanRepository plans,
+            WorkoutLogRepository logs,
+            MembershipRepository memberships,
+            PlanRepository memberPlans,
+            TrainerClient trainerClient,
+            ObjectMapper objectMapper) {
         this.plans = plans;
         this.logs = logs;
+        this.memberships = memberships;
+        this.memberPlans = memberPlans;
+        this.trainerClient = trainerClient;
         this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Pide una rutina nueva al servicio de IA y la guarda como la rutina de esta semana. Si ya
+     * había una generada esta semana, la sustituye (y con ella, las series ya marcadas: ya no
+     * pertenecen a ningún ejercicio real de la rutina nueva).
+     */
+    @Transactional
+    public WeeklyPlan generate(UUID tenantId, UUID userId, GenerateWorkoutRequest request) {
+        Membership membership = memberships.findFirstByTenantIdAndUserIdOrderByStartedAtDesc(tenantId, userId)
+                .filter(m -> m.getStatus() == MembershipStatus.ACTIVE)
+                .orElseThrow(() -> new WorkoutNotAllowedException("No tienes una cuota activa."));
+        Plan plan = memberPlans.findById(membership.getPlanId())
+                .orElseThrow(() -> new IllegalStateException("La tarifa de la membresía ya no existe"));
+        if (!plan.isAiTrainer()) {
+            throw new WorkoutNotAllowedException("Tu tarifa no incluye el entrenador con IA.");
+        }
+
+        AiWeeklyPlan aiPlan = trainerClient.generatePlan(request);
+        WeeklyPlan weeklyPlan = toWeeklyPlan(aiPlan);
+
+        LocalDate weekStart = LocalDate.now(MEMBER_ZONE).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        plans.findByTenantIdAndUserIdAndWeekStart(tenantId, userId, weekStart).ifPresent(existing -> {
+            logs.deleteAll(logs.findByWorkoutPlanId(existing.getId()));
+            plans.delete(existing);
+        });
+
+        WorkoutPlan saved = new WorkoutPlan(
+                tenantId, userId, weekStart, request.goal(), request.level(), request.daysPerWeek(),
+                serialize(weeklyPlan), PlanSource.AI);
+        plans.save(saved);
+
+        return weeklyPlan;
+    }
+
+    private WeeklyPlan toWeeklyPlan(AiWeeklyPlan aiPlan) {
+        List<PlanDay> days = aiPlan.days().stream()
+                .map(aiDay -> {
+                    int dayIndex = aiDay.day() - 1;
+                    List<PlanExercise> exercises = IntStream.range(0, aiDay.exercises().size())
+                            .mapToObj(i -> {
+                                var ex = aiDay.exercises().get(i);
+                                return new PlanExercise(i, ex.name(), ex.sets(), ex.reps(), null, ex.restSeconds(), ex.notes());
+                            })
+                            .toList();
+                    return new PlanDay(dayIndex, DAY_LABELS[dayIndex], aiDay.focus(), false, exercises);
+                })
+                .toList();
+        return new WeeklyPlan(days);
     }
 
     @Transactional(readOnly = true)

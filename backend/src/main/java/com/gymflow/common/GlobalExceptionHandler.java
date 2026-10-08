@@ -6,6 +6,9 @@ import com.gymflow.booking.BookingNotAllowedException;
 import com.gymflow.booking.BookingNotFoundException;
 import com.gymflow.booking.SessionNotFoundException;
 import com.gymflow.plan.MembershipNotFoundException;
+import com.gymflow.workout.WorkoutNotAllowedException;
+import com.gymflow.workout.ai.TrainerFailedException;
+import com.gymflow.workout.ai.TrainerUnavailableException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -59,5 +62,22 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({SessionNotFoundException.class, BookingNotFoundException.class, MembershipNotFoundException.class})
     public ProblemDetail handleNotFound(RuntimeException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(WorkoutNotAllowedException.class)
+    public ProblemDetail handleWorkoutNotAllowed(WorkoutNotAllowedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        problem.setTitle("Entrenador con IA no disponible para tu tarifa");
+        return problem;
+    }
+
+    @ExceptionHandler(TrainerUnavailableException.class)
+    public ProblemDetail handleTrainerUnavailable(TrainerUnavailableException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
+    @ExceptionHandler(TrainerFailedException.class)
+    public ProblemDetail handleTrainerFailed(TrainerFailedException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, ex.getMessage());
     }
 }

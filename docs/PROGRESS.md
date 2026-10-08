@@ -13,6 +13,37 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 5b - Entrenador con IA: backend y frontend (2026-10-08)
+- Hecho:
+  - `POST /me/workout/generate` (`GenerateWorkoutRequest`: goal, level, daysPerWeek, equipment, limitations):
+    - Comprueba cuota `ACTIVE` y que la tarifa tenga `ai_trainer` **antes** de llamar al servicio de IA (403 si no, y no gasta ninguna llamada al LLM: verificado con un test que comprueba que `TrainerClient` no se invoca en ese caso).
+    - `TrainerClient` (nuevo paquete `workout.ai`) llama a `POST /v1/trainer/plan` del servicio de IA con `RestClient` (timeout de conexión 5 s, de lectura 90 s: una rutina real puede tardar). Si no logra ni conectar, o el servicio de IA responde 503, lo relaya como 503; si responde cualquier otro error, 502. Mensajes en español llano, iguales en espíritu a los del servicio de IA.
+    - La respuesta del servicio de IA (`AiWeeklyPlan`, 1 = lunes) se traduce al `WeeklyPlan` del backend (`PlanDay`/`PlanExercise`, 0 = lunes): mismo mapeo 1 a 1 día por día y ejercicio por ejercicio que ya usaba la rutina manual del Trozo 3, sin aplastar ni reordenar nada que decidiera el modelo.
+    - Si ya existía una rutina generada esta semana, **se sustituye**: se borran sus series marcadas (ya no pertenecerían a ningún ejercicio real de la rutina nueva) y se guarda una fila nueva con `source=AI`.
+  - `/entrenador-ia` (nueva página, navegación pública): configurador real (objetivo, nivel, frecuencia semanal, material disponible, limitaciones) que llama a `POST /me/workout/generate` y muestra la rutina generada completa (todos los días, no solo "hoy") en el panel de la derecha. Si no has iniciado sesión, el envío te manda a `/acceso` (mismo patrón que "Reservar" en `/horario`); si tu tarifa no incluye IA o el servicio no responde, se ve el error tal cual lo manda el backend.
+  - `/cuenta/entrenamiento` (antes un aviso de "llega pronto", ya no era verdad) ahora explica dónde generarla (`/entrenador-ia`) y dónde verla y marcar series (`Inicio`, sin tocar esa pantalla: ya funcionaba desde el Trozo 3 y lee cualquier rutina sin importar si es `AI` o `MANUAL`). El aviso de "Todavía no tienes una rutina asignada" de `TodayWorkoutCard` ahora enlaza a `/entrenador-ia` en vez de decir que la función no existe todavía.
+  - Tests nuevos en `WorkoutAndMembershipHttpTest` (con `TrainerClient` sustituido por `@MockitoBean`, sin tocar red real): genera y guarda bien con tarifa con IA, 403 sin IA en la tarifa (y cero interacciones con el cliente de IA), 503 si el servicio de IA no responde, y que generar dos veces en la misma semana sustituye la rutina y borra las series de la anterior (y es una fila nueva, no la misma reutilizada).
+  - Verificado también en vivo contra Docker real (reconstruidas las imágenes de backend y frontend): registrada una socia con tarifa Completa, configurador de `/entrenador-ia` funcionando con los valores por defecto del diseño de referencia, envío real → **503** con el mensaje amable (no hay LLM configurado en esta máquina, ver "Pendiente"), confirmado en la pestaña de red que la petición pasó de verdad por backend → servicio de IA. Con una socia con tarifa Básica, el mismo formulario da **403** "Tu tarifa no incluye el entrenador con IA." al instante (sin esperar al servicio de IA, se nota en lo rápido que responde).
+- Decisiones / simplificaciones:
+  - No se construyó `GET /me/workout/week` (lo menciona `LOGIC.md §6`): `/entrenador-ia` ya recibe la rutina completa en la propia respuesta de `generate`, y `/cuenta` solo necesita "hoy" (ya existía). Añadir un endpoint que nada de lo pedido en este trozo usa habría sido construir por adelantado.
+  - "Límite por plan" (`ROADMAP.md`, Trozo 5) se interpretó como la comprobación de `ai_trainer` de la tarifa (403 si no la incluye), no como un límite de cuántas veces se puede regenerar la rutina: `LOGIC.md` no define ese límite en ningún sitio y no quise inventarlo.
+  - `POST /v1/trainer/adjust` (ajuste semanal automático, solo Atleta Pro) sigue sin construirse, igual que se anotó en el Trozo 5a: no lo pedía este encargo.
+  - El "material disponible" del configurador es de selección única (igual que en la referencia visual, donde solo se ve una opción marcada a la vez), aunque el backend admite una lista: para esta tarifa de complejidad no hacía falta multi-selección.
+  - El peso sugerido por ejercicio que se ve en la referencia visual (p. ej. "80 kg") no se implementó (ya anotado en el Trozo 5a: haría falta saber las marcas personales del socio, que no existen en el modelo de datos). La interfaz lo esconde automáticamente cuando `weightKg` es `null`, igual que ya hacía `TodayWorkoutCard` desde el Trozo 3.
+- Pendiente:
+  - Sigue sin haber un LLM real configurado en esta máquina: lo generado con éxito (panel derecho con una rutina real) está verificado por el test de backend que comprueba la forma exacta de la respuesta mapeada (la misma que consume el frontend) y por revisión del código de `/entrenador-ia`, que reutiliza el mismo patrón ya probado de `TodayWorkoutCard`; pero no se ha visto una rutina real generada por un modelo de verdad en el navegador. En cuanto haya un proveedor configurado (ver README, sección "Cambiar de proveedor de IA"), probarlo de verdad y revisar a mano que el español y los ejercicios tengan sentido.
+  - La llamada al servicio de IA sin proveedor configurado tarda unos 30 segundos en devolver el 503 (el SDK de OpenAI reintenta un par de veces por su cuenta antes de rendirse, y resolver el nombre `ollama` sin ese contenedor levantado también tarda). No es un error, pero con un proveedor real configurado debería responder mucho antes; si algún día molesta, se puede bajar `max_retries` del cliente de `ai-service/app/llm.py`.
+- Cómo probarlo:
+  - Backend: `cd backend && mvn test`.
+  - De verdad: `docker compose up -d` (con o sin `ai-service`/Ollama; sin LLM real verás el 503), entra en `/acceso` con una cuenta de tarifa Completa o Atleta Pro (p. ej. `laura@olympusgym.test` / `Demo1234!`) y ve a `/entrenador-ia`.
+  - Frontend: `npm run typecheck && npm run build`.
+- Tests:
+  - `mvn test`: BUILD SUCCESS, 45/45 en verde (4 nuevos en `WorkoutAndMembershipHttpTest`).
+  - `npm run typecheck` y `npm run build`: sin errores, 16 páginas (nueva: `/entrenador-ia`).
+  - Tests end-to-end de Playwright existentes (login, reservar/cancelar, cancelar sesión del Mini-trozo): repetidos tras reconstruir las imágenes, 5/5 en verde, sin cambios necesarios.
+
+---
+
 ### Trozo 5a - Entrenador con IA: servicio de IA (2026-10-08)
 - Hecho:
   - `POST /v1/trainer/plan` implementado de verdad (antes devolvía 501). Nuevo módulo `app/trainer.py`:

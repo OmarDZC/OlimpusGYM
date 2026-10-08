@@ -1,11 +1,11 @@
 import { Dumbbell } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 
 /**
- * El entrenador con IA (generar rutina, ajuste semanal) llega en el Trozo 5. La rutina de
- * hoy ya generada por el seed se ve en "Inicio"; aquí solo avisamos de que esto está en
- * camino, en vez de enseñar una página a medias.
+ * Configurar y generar la rutina pasa en /entrenador-ia (configurador real, Trozo 5); aquí
+ * solo se enlaza y se recuerda dónde ver y marcar series, para no duplicar esa pantalla.
  */
 export default function MiEntrenamientoPage() {
   return (
@@ -14,18 +14,20 @@ export default function MiEntrenamientoPage() {
         <Dumbbell size={24} className="text-accent-text" aria-hidden="true" />
       </div>
       <Badge tone="neutral" className="mt-4">
-        Próximamente
+        Entrenador con IA
       </Badge>
       <h1 className="mt-3 font-display text-4xl font-extrabold uppercase leading-none tracking-tight">
-        Tu entrenador con IA llega pronto
+        Genera o cambia tu rutina semanal
       </h1>
       <Card className="mt-6 text-left">
         <p className="text-sm text-text-muted">
-          Aquí podrás configurar tu objetivo y tu nivel, generar una rutina semanal nueva y
-          ajustarla según cómo te hayan sentado las últimas sesiones. Mientras tanto, tu
-          rutina de esta semana ya está lista: puedes verla y marcar las series hechas desde{" "}
-          <strong className="text-text">Inicio</strong>.
+          Configura tu objetivo, tu nivel y los días que puedes entrenar en{" "}
+          <strong className="text-text">Entrenador IA</strong> y genera tu rutina de esta semana. En cuanto esté
+          lista, puedes verla y marcar las series hechas desde <strong className="text-text">Inicio</strong>.
         </p>
+        <Button href="/entrenador-ia" variant="primary" className="mt-4">
+          Ir a Entrenador IA
+        </Button>
       </Card>
     </main>
   );

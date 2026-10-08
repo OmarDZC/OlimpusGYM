@@ -351,3 +351,41 @@ export async function cancelAdminBooking(token: string, bookingId: string): Prom
   });
   if (!response.ok) await throwProblem(response);
 }
+
+// ---- Entrenador con IA (Trozo 5) ----
+
+export type TrainerGoal = "hypertrophy" | "strength" | "fat_loss" | "general";
+export type TrainerLevel = "beginner" | "intermediate" | "advanced";
+
+export type GeneratedPlanExercise = {
+  exerciseIndex: number;
+  name: string;
+  sets: number;
+  reps: string;
+  weightKg: number | null;
+  restSeconds: number | null;
+  note: string | null;
+};
+
+export type GeneratedPlanDay = {
+  dayIndex: number;
+  label: string;
+  focus: string;
+  restDay: boolean;
+  exercises: GeneratedPlanExercise[];
+};
+
+export type GeneratedWeeklyPlan = { days: GeneratedPlanDay[] };
+
+export async function generateWorkoutPlan(
+  token: string,
+  input: { goal: TrainerGoal; level: TrainerLevel; daysPerWeek: number; equipment: string[]; limitations: string[] },
+): Promise<GeneratedWeeklyPlan> {
+  const response = await fetch(`${API_URL}/api/v1/me/workout/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}

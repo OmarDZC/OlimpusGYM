@@ -19,6 +19,12 @@ import com.gymflow.plan.PlanCode;
 import com.gymflow.plan.PlanRepository;
 import com.gymflow.tenant.Tenant;
 import com.gymflow.tenant.TenantRepository;
+import com.gymflow.workout.ai.AiDay;
+import com.gymflow.workout.ai.AiExercise;
+import com.gymflow.workout.ai.AiWeeklyPlan;
+import com.gymflow.workout.ai.TrainerClient;
+import com.gymflow.workout.ai.TrainerUnavailableException;
+import com.gymflow.workout.dto.GenerateWorkoutRequest;
 import com.gymflow.workout.dto.LogSetRequest;
 import com.gymflow.workout.dto.PlanDay;
 import com.gymflow.workout.dto.PlanExercise;
@@ -31,6 +37,7 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -38,6 +45,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -93,8 +101,12 @@ class WorkoutAndMembershipHttpTest {
     @Autowired
     PasswordEncoder passwordEncoder;
 
+    @MockitoBean
+    TrainerClient trainerClient;
+
     private Tenant tenant;
     private Plan plan;
+    private Plan planWithoutAiTrainer;
     private int todayIndex;
 
     @BeforeEach
@@ -103,14 +115,29 @@ class WorkoutAndMembershipHttpTest {
             .orElseGet(() -> tenants.save(new Tenant("OlympusGYM", Tenant.DEFAULT_SLUG)));
         plan = plans.findByTenantIdAndCode(tenant.getId(), PlanCode.COMPLETA)
             .orElseGet(() -> plans.save(new Plan(tenant.getId(), PlanCode.COMPLETA, "Completa", 5900, null, 14, true, true)));
+        planWithoutAiTrainer = plans.findByTenantIdAndCode(tenant.getId(), PlanCode.BASICA)
+            .orElseGet(() -> plans.save(new Plan(tenant.getId(), PlanCode.BASICA, "Básica", 3900, 4, 7, false, false)));
         todayIndex = LocalDate.now(ZoneId.of("Europe/Madrid")).getDayOfWeek().getValue() - 1;
+        Mockito.reset(trainerClient);
     }
 
     private User createMemberWithMembership(String email) {
+        return createMemberWithMembership(email, plan);
+    }
+
+    private User createMemberWithMembership(String email, Plan membershipPlan) {
         User user = new User(tenant.getId(), email, passwordEncoder.encode("ClaveDePrueba123!"), "Socio Prueba", Role.MEMBER);
         users.save(user);
-        memberships.save(new Membership(tenant.getId(), user.getId(), plan.getId(), MembershipStatus.ACTIVE, Instant.now()));
+        memberships.save(new Membership(tenant.getId(), user.getId(), membershipPlan.getId(), MembershipStatus.ACTIVE, Instant.now()));
         return user;
+    }
+
+    private static AiWeeklyPlan fakeAiPlan(String summary, int days) {
+        List<AiDay> aiDays = java.util.stream.IntStream.rangeClosed(1, days)
+            .mapToObj(day -> new AiDay(day, "Enfoque día " + day, List.of(
+                new AiExercise("Sentadilla", 3, "8-12", 90, null))))
+            .toList();
+        return new AiWeeklyPlan(summary, aiDays);
     }
 
     private String loginAndGetToken(String email) throws Exception {
@@ -232,5 +259,82 @@ class WorkoutAndMembershipHttpTest {
         mvc.perform(get("/api/v1/me/workout/today")).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/me/streak")).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/me/membership")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void generateSavesAndReturnsTheAiPlanWhenTariffIncludesAiTrainer() throws Exception {
+        createMemberWithMembership("genera.rutina@test.local");
+        String token = loginAndGetToken("genera.rutina@test.local");
+        Mockito.when(trainerClient.generatePlan(Mockito.any()))
+            .thenReturn(fakeAiPlan("Dos días de cuerpo completo", 2));
+
+        String body = objectMapper.writeValueAsString(
+            new GenerateWorkoutRequest("hypertrophy", "beginner", 2, List.of("gimnasio completo"), List.of()));
+
+        mvc.perform(post("/api/v1/me/workout/generate").header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.days.length()").value(2))
+            .andExpect(jsonPath("$.days[0].exercises[0].name").value("Sentadilla"));
+
+        mvc.perform(get("/api/v1/me/workout/today").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void generateIsForbiddenWhenTariffHasNoAiTrainer_andNeverCallsTheAiService() throws Exception {
+        createMemberWithMembership("sin.ia@test.local", planWithoutAiTrainer);
+        String token = loginAndGetToken("sin.ia@test.local");
+
+        String body = objectMapper.writeValueAsString(
+            new GenerateWorkoutRequest("hypertrophy", "beginner", 2, List.of(), List.of()));
+
+        mvc.perform(post("/api/v1/me/workout/generate").header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isForbidden());
+
+        Mockito.verifyNoInteractions(trainerClient);
+    }
+
+    @Test
+    void generateReturns503WhenAiServiceIsUnreachable() throws Exception {
+        createMemberWithMembership("ia.caida@test.local");
+        String token = loginAndGetToken("ia.caida@test.local");
+        Mockito.when(trainerClient.generatePlan(Mockito.any())).thenThrow(new TrainerUnavailableException());
+
+        String body = objectMapper.writeValueAsString(
+            new GenerateWorkoutRequest("strength", "advanced", 3, List.of(), List.of()));
+
+        mvc.perform(post("/api/v1/me/workout/generate").header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void generatingAgainReplacesThePreviousPlanAndItsLogsForTheSameWeek() throws Exception {
+        User user = createMemberWithMembership("regenera@test.local");
+        String token = loginAndGetToken("regenera@test.local");
+        Mockito.when(trainerClient.generatePlan(Mockito.any()))
+            .thenReturn(fakeAiPlan("Primera versión", 1))
+            .thenReturn(fakeAiPlan("Segunda versión", 1));
+
+        String body = objectMapper.writeValueAsString(
+            new GenerateWorkoutRequest("general", "beginner", 1, List.of(), List.of()));
+
+        mvc.perform(post("/api/v1/me/workout/generate").header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isOk());
+        LocalDate weekStart = LocalDate.now(ZoneId.of("Europe/Madrid")).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        WorkoutPlan firstPlan = workoutPlans.findByTenantIdAndUserIdAndWeekStart(tenant.getId(), user.getId(), weekStart).orElseThrow();
+        workoutLogs.save(new WorkoutLog(tenant.getId(), user.getId(), firstPlan.getId(), 0, 0, 0, true, null, null));
+
+        mvc.perform(post("/api/v1/me/workout/generate").header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.days[0].focus").value("Enfoque día 1"));
+
+        assertTrue(workoutLogs.findByWorkoutPlanId(firstPlan.getId()).isEmpty(), "las series de la rutina anterior deben desaparecer con ella");
+        WorkoutPlan secondPlan = workoutPlans.findByTenantIdAndUserIdAndWeekStart(tenant.getId(), user.getId(), weekStart).orElseThrow();
+        assertTrue(!secondPlan.getId().equals(firstPlan.getId()), "debe ser una fila nueva, no la misma reutilizada");
     }
 }
