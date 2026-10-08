@@ -1,0 +1,29 @@
+# Secrets
+.env
+*.pem
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Backend (Java / Maven)
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+*.class
+
+# AI service (Python)
+ai-service/.venv/
+ai-service/__pycache__/
+ai-service/**/__pycache__/
+ai-service/.pytest_cache/
+ai-service/.ruff_cache/
+*.pyc
+
+# Frontend (Node)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/tsconfig.tsbuildinfo
+npm-debug.log*

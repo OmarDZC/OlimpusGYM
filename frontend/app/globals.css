@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme {
+  /* Oscuro (por defecto) */
+  --color-bg: #0b0d10;
+  --color-surface: #14181d;
+  --color-surface-2: #1b2128;
+  --color-border: #232a31;
+  --color-text: #f2f4f5;
+  --color-text-muted: #8b949e;
+  --color-text-dim: #525a65;
+  --color-accent: #c6f432; /* lima eléctrico */
+  --color-accent-hover: #d5f758;
+  --color-accent-text: #c6f432; /* en oscuro el lima vale también como texto */
+  --color-on-accent: #0b0d10; /* texto sobre botón lima */
+  --color-danger: #ff5c5c;
+  --color-warning: #ffb020;
+
+  --font-display: var(--font-barlow-condensed), "Arial Narrow", sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --radius-card: 12px;
+  --radius-control: 8px;
+}
+
+/* Tema claro: se activa con data-theme="light" en <html> */
+:root[data-theme="light"] {
+  --color-bg: #fafaf7;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f1ec;
+  --color-border: #e2e2db;
+  --color-text: #15171a;
+  --color-text-muted: #5b6470;
+  --color-text-dim: #8a929c;
+  --color-accent-text: #4f6b00; /* lima oscurecido: el lima puro no tiene contraste como texto en claro */
+  --color-danger: #c62828;
+  --color-warning: #a86a00;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  html[data-theme="light"] {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

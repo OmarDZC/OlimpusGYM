@@ -1,0 +1,101 @@
+name: gymflow
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gymflow}
+      POSTGRES_USER: ${POSTGRES_USER:-gymflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gymflow}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gymflow} -d ${POSTGRES_DB:-gymflow}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-gymflow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-gymflow}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-gymflow}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-gymflow}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-gymflow}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-gymflow}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-gymflow}
+      GYMFLOW_JWT_SECRET: ${JWT_SECRET:-change-me-change-me-change-me-change-me-32b}
+      GYMFLOW_AI_BASE_URL: http://ai-service:8000
+    ports:
+      - "8080:8080"
+
+  ai-service:
+    build: ./ai-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-gymflow}:${POSTGRES_PASSWORD:-gymflow}@postgres:5432/${POSTGRES_DB:-gymflow}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-llama3.1:8b}
+      BACKEND_BASE_URL: http://backend:8080
+    ports:
+      - "8000:8000"
+
+  # LLM local y gratuito (opcional): docker compose --profile local-llm up -d ollama
+  # Después descarga un modelo: docker compose exec ollama ollama pull llama3.1:8b
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["local-llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+  ollama:
