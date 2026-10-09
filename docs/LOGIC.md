@@ -42,7 +42,7 @@ Reglas de seguridad obligatorias, con **tests**:
 | ATLETA_PRO | 79 € | ilimitadas | igual que Completa | sí, con ajuste semanal automático | sí |
 
 Simplificación: "reserva prioritaria" puede implementarse como ventana de reserva más amplia para Completa/Pro (p. ej. 14 días vs 7). Si es complicado, déjalo solo como texto y anótalo.
-Texto de beneficios para tarifas: sala de pesas 06:00–23:00, taquillas y duchas (es solo descripción), clases según plan, entrenador IA según plan, y para Pro una revisión mensual con un entrenador (descripción, sin lógica).
+Texto de beneficios para tarifas: sala de pesas 06:00–23:00 y duchas (es solo descripción; taquillas queda fuera de alcance, ver PROJECT_BRIEF.md), clases según plan, entrenador IA según plan, y para Pro una revisión mensual con un entrenador (descripción, sin lógica).
 
 ## 4. Modelo de datos (migraciones Flyway V2 en adelante)
 

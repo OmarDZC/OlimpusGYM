@@ -13,6 +13,56 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 9b (commit 2) - Textos de Mi cuota (2026-10-09)
+- Hecho:
+  - Quitadas las "taquillas" de lo que incluye la tarifa: el único sitio donde aparecían era el
+    bloque "Incluye" de `/cuenta/cuota` ("Sala de pesas de 06:00 a 23:00, taquillas y duchas" →
+    "... y duchas"). De paso, `docs/LOGIC.md` §3 (que describía ese mismo texto de beneficios)
+    se actualizó para no contradecir la implementación; `docs/PROJECT_BRIEF.md`, `docs/DESIGN.md`
+    y `docs/CLAUDE_CODE_PROMPT.md` ya decían lo contrario (que las taquillas quedan fuera de
+    alcance), así que no hacía falta tocarlos. El seed del backend nunca mencionaba taquillas.
+  - "Clases dirigidas según tu tarifa" sustituido por lo que la tarifa realmente incluye, a
+    partir de los campos de la propia respuesta de `/me/membership` (`classesPerMonth`,
+    `aiTrainer`, `aiAssistant`, `planCode`), no de un texto por plan copiado a mano: reservas
+    ilimitadas o "hasta N reservas al mes", si tiene entrenador y/o asistente con IA (o ninguno
+    de los dos, para Básica), y el ajuste semanal automático solo para Atleta Pro.
+  - Subtítulo de `/cuenta/cuota` cambiado de "El pago real con pasarela es una fase opcional
+    posterior del proyecto" a "Pago de demostración: no se cobra nada de verdad" (mismo texto
+    que ya usaba la confirmación de `/cuenta/cuota/cambiar-tarifa` del commit anterior, para que
+    no haya dos formas distintas de decir lo mismo).
+  - Revisado el resto de `/cuenta` contra la lista de palabras prohibidas de `DESIGN.md` §5:
+    ninguna aparece, y tampoco hay emojis. No existe todavía una página `/tarifas` (el enlace del
+    menú apunta a una ruta sin construir, de un trozo futuro), así que esa parte de la revisión
+    no aplica por ahora.
+  - Verificado en vivo contra Docker real con las tres tarifas de ejemplo: Marcos (Básica) ve
+    "Hasta 4 reservas al mes" y "Sin entrenador con inteligencia artificial ni asistente de
+    reservas"; Carlos (Atleta Pro) ve "Reservas ilimitadas", el entrenador y el asistente
+    combinados en una frase, y el ajuste semanal; ninguno de los dos ve ya "taquillas" en
+    ningún sitio.
+- Decisiones / simplificaciones:
+  - El ajuste semanal automático de Atleta Pro no tiene un campo propio en `Plan` (solo
+    `aiTrainer`/`aiAssistant`/`classesPerMonth`): en vez de añadir una migración y una columna
+    solo para un texto, el frontend lo deriva de `planCode === "ATLETA_PRO"`. Es la única parte
+    de los beneficios que no sale de un booleano genérico de la tarifa; documentado aquí en vez
+    de ampliar el modelo de datos para un trozo que ya estaba cerrado (commit 1).
+  - `aiTrainer` y `aiAssistant` se combinan en una sola frase cuando los dos son verdaderos o los
+    dos falsos (que es siempre el caso en los planes de ejemplo actuales), y se listan por
+    separado si algún día divergen: no hace falta una tabla de textos por plan, solo esas cuatro
+    combinaciones de dos booleanos.
+- Pendiente: nada de este commit. La pasarela de pago real (Trozo 7) sigue aparte, igual que la
+  futura página `/tarifas`.
+- Cómo probarlo:
+  - Frontend: `cd frontend && npm run typecheck && npm run build`.
+  - De verdad: `docker compose up -d --build frontend`, entra en `/cuenta/cuota` con cualquier
+    cuenta de socio del seed y compara el bloque "Incluye" con su tarifa.
+- Tests:
+  - `npm run typecheck` y `npm run build`: sin errores.
+  - Sin cambios en backend/ai-service: no hizo falta repetir `mvn test` ni `pytest` (se había
+    corrido `mvn test` justo antes, 77/77 en verde, para confirmar que el commit 1 seguía
+    intacto).
+
+---
+
 ### Trozo 9b (commit 1) - Periodos de membresía y cambio de tarifa (2026-10-09)
 - Hecho:
   - Migración `V5`: `memberships` gana `period_start`, `period_end`, `pending_plan_id` y

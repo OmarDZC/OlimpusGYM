@@ -24,6 +24,31 @@ const statusLabels: Record<Membership["status"], string> = {
   CANCELLED: "Cancelada",
 };
 
+/** Beneficios a partir de los datos reales de la tarifa, sin duplicar el texto a mano por plan. */
+function benefitBullets(membership: Membership): string[] {
+  const bullets: string[] = [
+    membership.classesPerMonth === null
+      ? "Reservas ilimitadas."
+      : `Hasta ${membership.classesPerMonth} reservas al mes.`,
+  ];
+
+  if (membership.aiTrainer && membership.aiAssistant) {
+    bullets.push("Entrenador con inteligencia artificial y asistente de reservas con inteligencia artificial.");
+  } else if (membership.aiTrainer) {
+    bullets.push("Entrenador con inteligencia artificial.");
+  } else if (membership.aiAssistant) {
+    bullets.push("Asistente de reservas con inteligencia artificial.");
+  } else {
+    bullets.push("Sin entrenador con inteligencia artificial ni asistente de reservas.");
+  }
+
+  if (membership.planCode === "ATLETA_PRO") {
+    bullets.push("Ajuste semanal automático de tu rutina.");
+  }
+
+  return bullets;
+}
+
 export default function MiCuotaPage() {
   const { token } = useAuth();
   const [membership, setMembership] = useState<Membership | null>(null);
@@ -56,7 +81,7 @@ export default function MiCuotaPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
       <h1 className="font-display text-4xl font-extrabold uppercase leading-none tracking-tight">Mi cuota</h1>
-      <p className="mt-2 text-text-muted">El pago real con pasarela es una fase opcional posterior del proyecto.</p>
+      <p className="mt-2 text-text-muted">Pago de demostración: no se cobra nada de verdad.</p>
 
       {loading && <p className="mt-6 text-sm text-text-muted">Cargando...</p>}
       {error && (
@@ -107,10 +132,10 @@ export default function MiCuotaPage() {
           <Card>
             <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Incluye</p>
             <ul className="mt-2 flex flex-col gap-1.5 text-sm text-text-muted">
-              <li>Sala de pesas de 06:00 a 23:00, taquillas y duchas.</li>
-              <li>Clases dirigidas según tu tarifa.</li>
-              {membership.aiTrainer && <li>Entrenador con inteligencia artificial.</li>}
-              {membership.aiAssistant && <li>Asistente de reservas con inteligencia artificial.</li>}
+              <li>Sala de pesas de 06:00 a 23:00 y duchas.</li>
+              {benefitBullets(membership).map((bullet) => (
+                <li key={bullet}>{bullet}</li>
+              ))}
             </ul>
           </Card>
 
