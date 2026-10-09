@@ -1,5 +1,8 @@
 package com.gymflow.common;
 
+import com.gymflow.assistant.AssistantNotAllowedException;
+import com.gymflow.assistant.ai.AssistantFailedException;
+import com.gymflow.assistant.ai.AssistantUnavailableException;
 import com.gymflow.auth.EmailAlreadyRegisteredException;
 import com.gymflow.auth.InvalidCredentialsException;
 import com.gymflow.booking.BookingNotAllowedException;
@@ -78,6 +81,23 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(TrainerFailedException.class)
     public ProblemDetail handleTrainerFailed(TrainerFailedException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, ex.getMessage());
+    }
+
+    @ExceptionHandler(AssistantNotAllowedException.class)
+    public ProblemDetail handleAssistantNotAllowed(AssistantNotAllowedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        problem.setTitle("Asistente con IA no disponible para tu tarifa");
+        return problem;
+    }
+
+    @ExceptionHandler(AssistantUnavailableException.class)
+    public ProblemDetail handleAssistantUnavailable(AssistantUnavailableException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
+    @ExceptionHandler(AssistantFailedException.class)
+    public ProblemDetail handleAssistantFailed(AssistantFailedException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, ex.getMessage());
     }
 }

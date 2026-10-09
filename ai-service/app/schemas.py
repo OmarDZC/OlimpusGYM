@@ -41,3 +41,44 @@ class DayPlan(BaseModel):
 class WeeklyPlan(BaseModel):
     summary: str
     days: list[DayPlan]
+
+
+# ---- Asistente de reservas con IA (Trozo 6) ----
+
+
+class ChatRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+class ChatMessage(BaseModel):
+    role: ChatRole
+    content: str = Field(min_length=1, max_length=2000)
+
+
+class PendingActionType(str, Enum):
+    BOOK = "book"
+    CANCEL = "cancel"
+
+
+class PendingAction(BaseModel):
+    """Propuesta de reservar o cancelar, pendiente de que el socio la confirme aparte."""
+
+    type: PendingActionType
+    session_id: str | None = None
+    booking_id: str | None = None
+    summary: str
+
+
+class AssistantChatRequest(BaseModel):
+    """`confirm_action` presente = turno de confirmación: no se habla con el LLM, se ejecuta
+    directamente contra el backend (y lo vuelve a validar él, no el modelo)."""
+
+    messages: list[ChatMessage] = Field(default_factory=list, max_length=20)
+    member_token: str = Field(min_length=10)
+    confirm_action: PendingAction | None = None
+
+
+class AssistantChatResponse(BaseModel):
+    reply: str
+    pending_action: PendingAction | None = None

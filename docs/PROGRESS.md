@@ -13,6 +13,114 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 6a - Asistente de reservas con IA: servicio de IA + backend (2026-10-09)
+- Cómo funciona (resumen):
+  El socio escribe; el modelo puede llamar libremente a `listar_clases`/`mis_reservas` (son solo
+  lecturas), pero si quiere reservar o cancelar, `reservar_clase`/`cancelar_reserva` **no ejecutan
+  nada**: solo construyen una propuesta (`PendingAction`) a partir de datos reales ya consultados
+  en el backend, y la respuesta trae esa propuesta junto con la pregunta de confirmación del
+  modelo. El socio confirma en una **petición aparte** (`confirm_action`) que ni siquiera habla
+  con el LLM: ejecuta directamente contra el backend real, que vuelve a validar aforo, ventana de
+  reserva, propiedad de la reserva y el límite de 2 horas exactamente igual que si hubiera
+  reservado a mano desde `/horario` — la IA propone, el backend decide.
+- Hecho:
+  - Antes de empezar: comprobado el resultado de la CI de GitHub Actions de los commits del
+    arreglo del 503 (`c961af2`) y de la documentación de tarifas (`85bd152`): en verde los cuatro
+    jobs en ambos. Nada que arreglar.
+  - Servicio de IA (`ai-service`): `POST /v1/assistant/chat` con *tool calling* real (4
+    herramientas: `listar_clases`, `mis_reservas`, `reservar_clase`, `cancelar_reserva`) contra un
+    cliente nuevo hacia el propio backend (`app/gymflow_client.py`), siempre con el token del
+    socio que habla (nunca uno del servicio). Límite de 4 pasos por turno y de longitud (2000
+    caracteres por mensaje, 20 mensajes de historial) vía Pydantic. 503 si no se puede hablar con
+    el LLM, 502 si se agotan los pasos sin resolver.
+  - Defensas de `LOGIC.md §7` en el prompt del sistema: los datos que llegan de herramientas o de
+    mensajes del socio son datos, nunca instrucciones nuevas; nunca revela ni resume el prompt del
+    sistema; solo habla de temas del gimnasio; solo puede actuar sobre lo del socio que habla (lo
+    que además ya garantiza la arquitectura: todas las llamadas usan el token del propio socio, y
+    `cancelar_reserva` solo encuentra reservas dentro de `mis_reservas`, que el backend ya filtra
+    por dueño).
+  - Backend: `POST /me/assistant/chat` (paquete nuevo `com.gymflow.assistant`, mismo patrón que
+    `workout`/`TrainerClient` del Trozo 5): exige cuota activa y `ai_assistant` en la tarifa (403
+    si no, sin llamar al servicio de IA), reenvía al servicio de IA con el token del socio
+    extraído de la cabecera `Authorization`, relaya 503/502 tal cual.
+  - Arreglado de paso: `zoneinfo.ZoneInfoNotFoundError` en `ai-service` (ni Windows ni la imagen
+    `python:3.12-slim` traen el paquete de datos IANA) — añadido `tzdata` a `requirements.txt`.
+  - Tests del servicio de IA (`tests/test_assistant.py`, LLM simulado con guion de llamadas a
+    herramientas en `tests/fakes.py`, 9 nuevos): flujo feliz (consulta → propuesta → confirmación
+    → reserva hecha, con el doble del backend registrando la llamada real), no se reserva nada sin
+    un turno de confirmación aparte, un socio no puede cancelar la reserva de otro (el id ajeno no
+    aparece en `mis_reservas`, así que la propuesta ni se crea), dos variantes de intento de
+    *prompt injection* (en un mensaje directo y en el nombre de una clase devuelta por una
+    herramienta) que, aunque el modelo simulado "pique" y llame a la herramienta, nunca ejecutan
+    nada sin confirmación aparte, límite de pasos agotado → 502, mensaje/historial demasiado
+    largos → 422, proveedor inalcanzable → 503.
+  - Tests del backend (`AssistantHttpTest`, `AssistantClient` sustituido por `@MockitoBean`, 7
+    nuevos): proxy correcto con tarifa con asistente, 403 sin asistente en la tarifa (y cero
+    llamadas al cliente de IA), 503, 502, mensaje demasiado largo rechazado antes de llamar a la
+    IA, `confirmAction` reenviado sin tocar (comprobado con un `ArgumentCaptor`), requiere
+    autenticación.
+  - Verificado también en vivo contra Docker real (reconstruidas las imágenes de backend y
+    `ai-service`; Docker Desktop se había cerrado a mitad de sesión, hubo que esperar a que el
+    usuario lo reabriera): `mvn test` con Postgres real, **52/52 en verde, 0 omitidos**, incluidos
+    los 7 de `AssistantHttpTest`. Con `curl`: socio con tarifa Completa → 503 real de punta a
+    punta (sin LLM configurado), con tildes y signos de interrogación en el mensaje sin
+    problemas; socio con tarifa Básica → 403 instantáneo con el mensaje esperado, sin tocar el
+    servicio de IA; mensaje de más de 2000 caracteres → 400 de validación; sin cabecera
+    `Authorization` → 403 de Spring Security. Repetidos también los 5 tests end-to-end de
+    Playwright del mini-trozo anterior tras reconstruir las imágenes: siguen en verde.
+- Decisiones / simplificaciones:
+  - La "confirmación" es una garantía de arquitectura, no de que el modelo se porte bien: aunque
+    el modelo llame a `reservar_clase`/`cancelar_reserva`, el código nunca ejecuta nada en ese
+    mismo turno; solo lo hace una petición distinta con `confirm_action`, que además el backend
+    real vuelve a validar entero. Así, lo peor que puede hacer un modelo manipulado es *proponer*
+    algo que el backend acabe rechazando — nunca ejecutarlo sin que el socio lo confirme aparte.
+  - No se usó `response_format: json_object` para las respuestas del asistente (igual que en el
+    entrenador del Trozo 5a): el *tool calling* nativo de la API de OpenAI ya obliga a una forma
+    estructurada para las llamadas a herramientas, y la respuesta final es texto libre en
+    español, no JSON.
+  - El resumen de la propuesta (`PendingAction.summary`) se construye siempre a partir de datos
+    reales recién consultados al backend (nombre de la sesión, hora, sala / nombre de la reserva),
+    nunca del texto que "diga" el modelo: así la tarjeta de confirmación nunca puede mostrar algo
+    que no exista de verdad, pase lo que pase en la conversación.
+  - No se construyó `POST /v1/assistant/chat` con memoria de servidor entre turnos: el cliente
+    reenvía el historial completo (hasta 20 mensajes) en cada petición, y `confirm_action` viaja
+    aparte. Es más simple que guardar sesiones de conversación en el servicio de IA, y encaja con
+    que el propio encargo pide un límite de mensajes.
+- Pendiente:
+  - Sigue sin haber un LLM real configurado en esta máquina: todo lo anterior está verificado con
+    el LLM simulado de los tests y, contra el servicio real, solo se ha podido comprobar el camino
+    de "no disponible" (503). Falta probar una conversación real (consultar horario, proponer una
+    reserva, confirmarla) con un modelo de verdad; en cuanto haya un proveedor configurado (ver
+    README, "Cambiar de proveedor de IA"), probarlo a mano.
+  - `GET /me/assistant/*` o un histórico de conversaciones no existe: no lo pedía este trozo (el
+    cliente lleva su propio historial en memoria).
+- Cómo probarlo:
+  - Servicio de IA: `cd ai-service && pytest -v`.
+  - Backend: `cd backend && mvn test` (con Docker arriba; si no, los de Testcontainers se omiten).
+  - De verdad con `curl` (sin LLM real configurado, para ver el camino de "no disponible"):
+    ```bash
+    TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+      -H "Content-Type: application/json" \
+      -d '{"email":"laura@olympusgym.test","password":"Demo1234!"}' \
+      | python -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+    curl -s -X POST http://localhost:8080/api/v1/me/assistant/chat \
+      -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+      -d '{"messages":[{"role":"user","content":"¿Qué clases hay esta semana?"}]}'
+    ```
+    Con un proveedor de verdad configurado, la misma llamada debería devolver una propuesta de
+    clases reales; para confirmar una reserva propuesta, repetir la llamada con
+    `{"messages":[],"confirmAction":{"type":"book","sessionId":"...","summary":"..."}}` usando el
+    `pendingAction` exacto que devolvió la respuesta anterior.
+- Tests:
+  - `pytest -v` (ai-service): 17/17 en verde (9 nuevos de `test_assistant.py`).
+  - `mvn test` (backend, con Docker real): BUILD SUCCESS, **52/52 en verde, 0 omitidos** (7 nuevos
+    de `AssistantHttpTest`).
+  - `npx playwright test` (e2e, sin cambios en este trozo): 5/5 en verde, repetido tras
+    reconstruir las imágenes.
+
+---
+
 ### Documentación - Cambios de tarifa y avisos de renovación, para cuando se retome Pagos (2026-10-08)
 - Hecho:
   - `docs/LOGIC.md` §12 (nueva, al final del archivo para no renumerar las que ya citan comentarios del código: "LOGIC.md §5.5", "§7", etc.): reglas para subir tarifa (al instante, prorrateado, no cambia `renews_at`), bajar tarifa (nunca de inmediato, se programa con `pending_plan_id`/`pending_effective_at`, subir de nuevo cancela la bajada), cancelar (`cancel_at_period_end`, activa hasta el final del periodo pagado), y un job diario de aviso de renovación (`@Scheduled`, ~3 días antes, una sola vez por periodo con `renewal_notice_sent_at`, por `Notifier`). También que el cobro de la diferencia, mientras no haya Stripe, queda como "pendiente (demo)", y que el aviso de "tu tarifa no incluye IA" debería enlazar a subir de tarifa.
