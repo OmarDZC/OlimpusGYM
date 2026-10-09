@@ -13,6 +13,59 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Arreglo 2 - La barra inferior de móvil solo se veía en Inicio (2026-10-09)
+- Hecho:
+  - **Causa encontrada**: la barra (`MobileAccountNav`) se pinta en `app/cuenta/layout.tsx`, que
+    envuelve todas las páginas bajo `/cuenta/*` (Inicio, Mis reservas, Mi entrenamiento, Mi
+    cuota, Perfil: las cinco ya la heredaban bien, comprobado una por una en el navegador a
+    375 px). El problema es que la propia pestaña **"Reservar"** de esa barra apunta a
+    `/horario`, que vive **fuera** de `/cuenta` (es también el horario público, lo ve cualquiera
+    sin sesión): al no estar bajo ese layout, nunca heredaba la barra ni el relleno inferior, y
+    el socio se quedaba solo con la cabecera genérica. No era "cualquier apartado", era
+    justo el que usa el propio botón "Reservar" para salir de /cuenta.
+  - `/horario` ahora pinta `MobileAccountNav` (la misma barra, no una copia) cuando quien mira la
+    página es un socio con sesión iniciada — igual que ya hace `AssistantChatPanel`, solo oculta
+    la barra para visitantes sin cuenta y para staff/owner, que no tienen esta zona. Con el mismo
+    relleno inferior (`pb-20 md:pb-0`) que ya usa `CuentaLayout` para que la barra fija no tape
+    el último elemento de la lista.
+  - No se tocó `AccountNav` (el submenú de escritorio de `/cuenta`): el encargo pedía arreglar la
+    barra inferior, no añadir ese submenú a una pantalla pública como `/horario`.
+  - `aria-current="page"` en el enlace activo de `MobileAccountNav` (antes solo cambiaba de
+    color, sin nada programático para un lector de pantalla); relleno de zona segura inferior
+    (`env(safe-area-inset-bottom)`) para los móviles con indicador de inicio. El resto de
+    accesibilidad (etiqueta `aria-label` en el `<nav>`, enlaces con nombre visible, foco
+    visible, uso con teclado) ya estaba bien desde el Trozo 3; no hacía falta nada más.
+  - Test end-to-end nuevo (`e2e/tests/mobile-bottom-nav.spec.ts`, viewport 390×844): la barra se
+    ve en las seis pantallas del socio (incluida `/horario`), marca la pestaña activa según la
+    ruta, y no aparece en escritorio (se mantiene el menú superior).
+  - Verificado a mano en el navegador a 375 px en las seis rutas (capturas de antes/después
+    enviadas) y en escritorio (sin barra, menú superior intacto).
+- Decisiones / simplificaciones:
+  - `/entrenador-ia` tiene el mismo problema estructural (vive fuera de `/cuenta`) y un socio
+    puede llegar ahí directamente, no solo desde el stub de `/cuenta/entrenamiento`. No se tocó
+    porque el encargo nombraba explícitamente las pantallas a arreglar (las que ya son pestañas
+    de la barra, más "Mis reservas" y el chat) y esa no estaba en la lista; queda anotado por si
+    se quiere revisar más adelante.
+  - El chat del asistente (un `<div>` superpuesto con `z-50`, por encima de la barra con `z-40`)
+    no necesitaba ningún cambio propio: al abrirse sobre `/horario`, que ya tiene la barra en su
+    estado base, cubre toda la pantalla igual que ya cubría el menú superior; no tiene sentido
+    que un cuadro de diálogo duplique la navegación de la página que tapa.
+- Pendiente: nada bloqueante. `/entrenador-ia` queda anotado arriba como posible arreglo futuro.
+- Cómo probarlo:
+  - Frontend: `cd frontend && npm run typecheck && npm run build`.
+  - e2e: `npx playwright test mobile-bottom-nav` (con el stack en Docker levantado).
+  - De verdad: `docker compose up -d --build frontend`, entra como socio y reduce la ventana del
+    navegador a un ancho de móvil (o usa las herramientas de dispositivo del navegador) en
+    `/cuenta`, `/horario`, `/cuenta/reservas`, `/cuenta/entrenamiento`, `/cuenta/cuota` y
+    `/cuenta/perfil`.
+- Tests:
+  - `npm run typecheck` y `npm run build`: sin errores, 16 páginas.
+  - `npx playwright test`: **9/9 en verde** (3 nuevos de `mobile-bottom-nav.spec.ts`), repetido
+    tres veces sin fallos intermitentes.
+  - Sin cambios en el backend: no hizo falta volver a correr `mvn test`.
+
+---
+
 ### Arreglo 1 - "Tu próxima clase" enseñaba una clase ya pasada (2026-10-09)
 - Hecho:
   - **Causa encontrada**: `GET /me/bookings` devolvía las reservas activas (BOOKED/WAITLIST) sin

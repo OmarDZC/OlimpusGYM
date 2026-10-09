@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { MobileAccountNav } from "@/components/account/MobileAccountNav";
 import { AssistantChatPanel } from "@/components/assistant/AssistantChatPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
@@ -124,7 +125,15 @@ export default function HorarioPage() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+    <main
+      className={cn(
+        "mx-auto max-w-5xl px-4 py-10 sm:px-6",
+        // /horario vive fuera de /cuenta (es también el horario público), así que aquí hay
+        // que repetir a mano lo que CuentaLayout ya hace por sus páginas: reservar hueco para
+        // la barra inferior fija en móvil, y solo para un socio con sesión iniciada.
+        canSeeOwnBookings && "pb-20 md:pb-0",
+      )}
+    >
       <Badge tone="neutral">Datos de ejemplo · demo</Badge>
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <h1 className="font-display text-5xl font-extrabold uppercase leading-none tracking-tight sm:text-6xl">
@@ -261,6 +270,8 @@ export default function HorarioPage() {
       {assistantOpen && (
         <AssistantChatPanel onClose={() => setAssistantOpen(false)} onActionConfirmed={afterAction} />
       )}
+
+      {canSeeOwnBookings && <MobileAccountNav />}
     </main>
   );
 }
