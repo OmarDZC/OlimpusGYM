@@ -84,6 +84,25 @@ docker compose exec ollama ollama pull llama3.1:8b
 Los modelos gratuitos y sus límites cambian con el tiempo: consulta la web de cada proveedor
 antes de fijar `LLM_MODEL`.
 
+### Probar el asistente de reservas con un proveedor real (ejemplo con Groq)
+
+El asistente (`/horario` → botón "Reservar con IA") usa el mismo cliente y las mismas
+variables que el entrenador, así que no hace falta nada específico para él:
+
+```bash
+# En .env:
+LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_API_KEY=tu_clave_de_groq
+LLM_MODEL=llama-3.1-8b-instant   # o el modelo que tengas disponible en tu cuenta
+
+docker compose up -d --build ai-service   # recoge las variables nuevas de .env
+```
+
+Después, entra con una cuenta de tarifa Completa o Atleta Pro (p. ej.
+`laura@olympusgym.test` / `Demo1234!`), abre `/horario`, pulsa "Reservar con IA" y pídele que
+consulte el horario, reserve o cancele una clase. Solo ejecuta algo cuando confirmas la
+propuesta: hasta entonces puedes pedirle lo que quieras sin miedo a que reserve de verdad.
+
 ## Tests
 
 ```bash
@@ -95,13 +114,24 @@ cd frontend && npm run typecheck
 ### End-to-end (Playwright)
 
 Tests de navegador reales contra el stack levantado en Docker: login por rol, reservar y
-cancelar una clase como socio, y que el staff cancele una sesión y la reserva del socio
-quede cancelada. Viven en `e2e/`, aparte de `frontend/` (no son parte del build de Next.js).
+cancelar una clase como socio, que el staff cancele una sesión y la reserva del socio quede
+cancelada, y que el socio reserve hablando con el asistente y confirmando la propuesta. Viven
+en `e2e/`, aparte de `frontend/` (no son parte del build de Next.js).
 
 ```bash
-docker compose up -d postgres redis rabbitmq backend frontend   # no hace falta ai-service
+docker compose up -d postgres redis rabbitmq backend frontend   # escenarios sin IA
 cd e2e && npm install && npx playwright install --with-deps chromium
 npx playwright test
+```
+
+El escenario del asistente necesita además el servicio de IA, pero con un LLM simulado
+(`e2e/fake-llm`, un doble mínimo compatible con OpenAI, sin red externa ni coste) en vez de un
+proveedor real — ver `docker-compose.e2e.yml`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build \
+  postgres redis rabbitmq backend ai-service frontend fake-llm
+cd e2e && npx playwright test
 ```
 
 También corren en GitHub Actions (job `e2e` de la CI) contra el mismo `docker compose`.

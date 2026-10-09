@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.assistant import _format_datetime_es
 from app.gymflow_client import get_gymflow_client
 from app.llm import get_client
 from app.main import app
@@ -59,6 +60,9 @@ def test_flujo_feliz_consulta_propuesta_confirmacion_y_reserva():
     assert body["pending_action"]["session_id"] == "sess-1"
     assert "confirmas" in body["reply"].lower()
     assert gymflow.book_calls == []  # propuesta, no ejecución
+    # La fecha del resumen va en español llano (hora de Madrid), nunca en ISO-8601 crudo.
+    assert "martes 13 de octubre a las 19:00" in body["pending_action"]["summary"]
+    assert "2026-10-13T" not in body["pending_action"]["summary"]
 
     r2 = client.post(
         "/v1/assistant/chat",
@@ -192,6 +196,15 @@ def test_demasiados_mensajes_en_el_historial_se_rechaza():
         },
     )
     assert r.status_code == 422
+
+
+def test_format_datetime_es_en_espanol_llano_hora_de_madrid():
+    assert _format_datetime_es("2026-10-13T17:00:00Z") == "martes 13 de octubre a las 19:00"
+
+
+def test_format_datetime_es_sin_fecha_no_rompe():
+    assert _format_datetime_es(None) == "una fecha sin confirmar"
+    assert _format_datetime_es("esto no es una fecha") == "esto no es una fecha"
 
 
 def test_llm_inalcanzable_da_503():

@@ -13,6 +13,92 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 6b - Asistente de reservas con IA: chat en el frontend (2026-10-09)
+- Hecho:
+  - Botón "Reservar con IA" en `/horario` (visible para socios y visitantes sin sesión —
+    redirige a `/acceso`, como ya hacía "Reservar"; oculto para staff/owner, que no tienen
+    este feature). Abre `AssistantChatPanel`: panel lateral (pantalla completa en móvil por
+    `max-w-md` + `inset-0`), mensajes del socio y del asistente diferenciados por color y
+    alineación, indicador "El asistente está escribiendo" mientras se espera respuesta.
+  - Cuando el asistente propone una acción, tarjeta con el resumen exacto que mandó el backend
+    y los botones "Confirmar"/"Cancelar": solo "Confirmar" llama a la API con `confirmAction`
+    (lo mismo que ya probaba `AssistantHttpTest` en el Trozo 6a); "Cancelar" solo descarta la
+    propuesta en el cliente, sin tocar el backend.
+  - Si la tarifa no incluye el asistente (403), el formulario se sustituye por el aviso "Tu
+    tarifa no incluye el asistente con IA." con un enlace a `/cuenta/cuota` ("Ver mi tarifa").
+  - Accesibilidad: `role="dialog"` + `aria-modal`, el foco entra en el campo de texto al abrir
+    y vuelve al botón que lo abrió al cerrar (y también se devuelve al campo de texto tras
+    confirmar/cancelar una propuesta, porque el botón enfocado desaparece del DOM al
+    actualizarse la conversación); bucle de tabulación propio dentro del panel; Escape cierra;
+    `role="log"` + `aria-live="polite"` en la lista de mensajes para que un lector de pantalla
+    anuncie las respuestas nuevas. Sin emojis, sin puntos suspensivos, animaciones respetando
+    `prefers-reduced-motion` (regla global ya existente en `globals.css`, Trozo 0).
+  - Arreglo de paso en el servicio de IA: el resumen de la propuesta mostraba la fecha en
+    ISO-8601 crudo ("2026-10-09T12:00:00Z"), nada de español llano. Añadido
+    `_format_datetime_es` (hora de Madrid: "jueves 9 de octubre a las 14:00"), con 2 tests
+    nuevos.
+  - `components/ui/Input.tsx` ahora admite `ref` (React 19 ya no necesita `forwardRef` para
+    esto; solo hacía falta ampliar el tipo a `ComponentPropsWithRef<"input">") — lo necesita el
+    chat para devolver el foco al campo de texto.
+  - Test end-to-end nuevo (`e2e/tests/assistant-booking.spec.ts`) contra el stack real: abre el
+    chat desde `/horario`, pide una reserva mencionando el nombre exacto de la clase de prueba,
+    confirma la propuesta, y comprueba que aparece de verdad en "Mis reservas". Necesita una
+    conversación con IA de verdad, así que se añadió `e2e/fake-llm` (un doble compatible con
+    OpenAI, sin dependencias, ~90 líneas) que sigue siempre el mismo guion (listar_clases →
+    reservar_clase → proponer) y elige la clase buscando qué nombre de `listar_clases` aparece
+    tal cual en el mensaje del socio. Se activa con `docker-compose.e2e.yml` (overridea
+    `LLM_BASE_URL` de `ai-service` y añade el contenedor `fake-llm`; nunca afecta a
+    `docker compose up` normal). CI (`e2e` de GitHub Actions) actualizada para levantar
+    `ai-service`+`fake-llm` con ese override.
+  - README: tabla de proveedores ampliada con un ejemplo concreto de cómo probar el asistente
+    con Groq; sección de e2e ampliada con el cuarto escenario y el uso de `fake-llm`.
+  - Verificado en vivo contra Docker real con el LLM simulado (no solo el fake de los tests
+    unitarios, sino el servicio de IA real hablando con `fake-llm` por HTTP): conversación
+    completa en el navegador (capturada y enviada al usuario) — pedir una clase, ver la
+    propuesta con la fecha ya en español, confirmar, ver "¡Reserva confirmada!" — y confirmado
+    con `GET /me/bookings` que la reserva existía de verdad en la base de datos.
+- Decisiones / simplificaciones:
+  - No existe una pantalla de referencia de Stitch para este chat (no está en `docs/design/`):
+    se construyó siguiendo los tokens de `DESIGN.md` (superficie + borde, radio de tarjeta,
+    lima solo para lo importante, Barlow Condensed en el título) y el mismo lenguaje visual que
+    ya usan `TodayWorkoutCard`/`Dropdown`, no una captura concreta que comparar. La captura
+    enviada muestra el resultado; si en algún momento aparece una referencia específica para
+    esta pantalla, revisar contra ella.
+  - El enlace de "tu tarifa no incluye el asistente con IA" va a `/cuenta/cuota` (plano, sin
+    botón de subir de tarifa: esa acción no existe todavía). En cuanto se implemente el Trozo
+    9b (`docs/LOGIC.md` §12), este enlace debería pasar a ser directamente "Subir de tarifa".
+  - "Cancelar" una propuesta no llama a la API: declinar no tiene ningún efecto que el backend
+    necesite saber (no se creó nada, no hay nada que deshacer), así que confirmarlo solo en el
+    cliente es más simple y no gasta ninguna llamada al LLM ni al backend.
+  - El historial que se manda a la API se recorta a los últimos 20 mensajes en el cliente
+    (`trimHistory`), reflejando el mismo límite que ya validaba el backend desde el Trozo 6a:
+    así una conversación larga nunca choca con el 422 en vez de poder seguir hablando.
+- Pendiente:
+  - Sigue sin haber un LLM real configurado en esta máquina para probar con lenguaje natural de
+    verdad (frases ambiguas, fechas relativas complejas, etc.): lo verificado en vivo usa
+    `e2e/fake-llm`, que sigue un guion fijo, no entiende español. En cuanto haya un proveedor
+    configurado (ver README, "Probar el asistente... con Groq"), probarlo a mano con
+    conversaciones reales.
+  - No se ha reescrito ningún test existente de `/horario` para tener en cuenta el nuevo botón
+    "Reservar con IA": no hacía falta, ninguno buscaba por texto que colisione con él.
+- Cómo probarlo:
+  - Frontend: `cd frontend && npm run typecheck && npm run build`.
+  - Servicio de IA: `cd ai-service && pytest -v`.
+  - e2e con LLM simulado: `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build postgres redis rabbitmq backend ai-service frontend fake-llm` y luego `cd e2e && npx playwright test`.
+  - De verdad en el navegador: con el stack de arriba levantado, entra con una cuenta de tarifa
+    Completa o Atleta Pro (p. ej. `laura@olympusgym.test` / `Demo1234!`), ve a `/horario`, pulsa
+    "Reservar con IA" y pide que te reserve una clase por su nombre exacto.
+- Tests:
+  - `npm run typecheck` y `npm run build`: sin errores, 16 páginas (sin cambios de rutas, solo
+    de contenido).
+  - `pytest -v` (ai-service): 19/19 en verde (2 nuevos de formato de fecha).
+  - `mvn test` (backend, sin cambios en este trozo): 52/52 en verde, confirmado de nuevo.
+  - `npx playwright test` (e2e, con `fake-llm`): **6/6 en verde** (el nuevo
+    `assistant-booking.spec.ts` incluido), repetido tres veces seguidas sin fallos
+    intermitentes.
+
+---
+
 ### Trozo 6a - Asistente de reservas con IA: servicio de IA + backend (2026-10-09)
 - Cómo funciona (resumen):
   El socio escribe; el modelo puede llamar libremente a `listar_clases`/`mis_reservas` (son solo

@@ -389,3 +389,34 @@ export async function generateWorkoutPlan(
   if (!response.ok) await throwProblem(response);
   return response.json();
 }
+
+// ---- Asistente de reservas con IA (Trozo 6) ----
+
+export type AssistantChatRole = "user" | "assistant";
+
+export type AssistantChatMessage = { role: AssistantChatRole; content: string };
+
+export type AssistantPendingAction = {
+  type: "book" | "cancel";
+  sessionId: string | null;
+  bookingId: string | null;
+  summary: string;
+};
+
+export type AssistantChatResult = {
+  reply: string;
+  pendingAction: AssistantPendingAction | null;
+};
+
+export async function assistantChat(
+  token: string,
+  input: { messages: AssistantChatMessage[]; confirmAction?: AssistantPendingAction | null },
+): Promise<AssistantChatResult> {
+  const response = await fetch(`${API_URL}/api/v1/me/assistant/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ messages: input.messages, confirmAction: input.confirmAction ?? null }),
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}

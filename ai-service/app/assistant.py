@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 MAX_STEPS = 4
 MADRID = ZoneInfo("Europe/Madrid")
 _WEEKDAYS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_MONTHS_ES = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
 
 TOOLS = [
     {
@@ -102,6 +106,18 @@ class AssistantFailedError(Exception):
 
 def _weekday_es(dt: datetime) -> str:
     return _WEEKDAYS_ES[dt.weekday()]
+
+
+def _format_datetime_es(iso_value: str | None) -> str:
+    """Convierte un ISO-8601 en UTC (lo que devuelve el backend) a español llano, hora de
+    Madrid: "jueves 9 de octubre a las 14:00". Si no se puede leer, se devuelve tal cual."""
+    if not iso_value:
+        return "una fecha sin confirmar"
+    try:
+        dt = datetime.fromisoformat(iso_value.replace("Z", "+00:00")).astimezone(MADRID)
+    except ValueError:
+        return iso_value
+    return f"{_weekday_es(dt)} {dt.day} de {_MONTHS_ES[dt.month - 1]} a las {dt.strftime('%H:%M')}"
 
 
 def _system_prompt() -> str:
@@ -259,7 +275,10 @@ def _propose_book(gymflow: GymflowClient, session_id: str | None, pending_action
     session = next((s for s in sessions if s.get("id") == session_id), None)
     if session is None:
         return {"error": "No encuentro esa clase. Vuelve a consultar el horario."}, pending_action
-    summary = f"Reservar {session.get('name')} el {session.get('startsAt')} en {session.get('room')}"
+    summary = (
+        f"Reservar {session.get('name')} el {_format_datetime_es(session.get('startsAt'))} "
+        f"en {session.get('room')}"
+    )
     new_pending = PendingAction(type=PendingActionType.BOOK, session_id=session_id, summary=summary)
     return {"ok": True, "resumen": summary}, new_pending
 
@@ -275,7 +294,7 @@ def _propose_cancel(gymflow: GymflowClient, member_token: str, booking_id: str |
         # O no existe, o no es del socio que habla (my_bookings solo trae las suyas): mismo
         # mensaje para los dos casos, para no revelar que la reserva existe pero es ajena.
         return {"error": "No encuentro esa reserva entre las tuyas activas."}, pending_action
-    summary = f"Cancelar {booking.get('sessionName')} el {booking.get('startsAt')}"
+    summary = f"Cancelar {booking.get('sessionName')} el {_format_datetime_es(booking.get('startsAt'))}"
     new_pending = PendingAction(type=PendingActionType.CANCEL, booking_id=booking_id, summary=summary)
     return {"ok": True, "resumen": summary}, new_pending
 

@@ -1,0 +1,20 @@
+# Override solo para los tests end-to-end (e2e/tests/assistant-booking.spec.ts): sustituye el
+# LLM real por un doble en memoria (e2e/fake-llm), para poder probar de punta a punta el chat
+# del asistente sin depender de un proveedor externo ni de sus costes/latencia.
+#
+# Uso: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build \
+#        postgres redis rabbitmq backend ai-service frontend fake-llm
+
+services:
+  fake-llm:
+    build: ./e2e/fake-llm
+    ports:
+      - "4100:4100"
+
+  ai-service:
+    environment:
+      LLM_BASE_URL: http://fake-llm:4100/v1
+      LLM_API_KEY: fake-key
+      LLM_MODEL: fake-model
+    depends_on:
+      - fake-llm

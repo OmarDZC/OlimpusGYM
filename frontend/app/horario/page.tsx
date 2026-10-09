@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AssistantChatPanel } from "@/components/assistant/AssistantChatPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -35,9 +36,11 @@ export default function HorarioPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actingSessionId, setActingSessionId] = useState<string | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const selectedDay = days[selectedDayIndex];
   const canSeeOwnBookings = status === "signed-in" && user?.role === "MEMBER";
+  const canUseAssistant = status !== "signed-in" || user?.role === "MEMBER";
 
   async function loadSchedule() {
     setLoading(true);
@@ -112,12 +115,27 @@ export default function HorarioPage() {
     }
   }
 
+  function handleOpenAssistant() {
+    if (status !== "signed-in") {
+      router.push("/acceso");
+      return;
+    }
+    setAssistantOpen(true);
+  }
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
       <Badge tone="neutral">Datos de ejemplo · demo</Badge>
-      <h1 className="mt-4 font-display text-5xl font-extrabold uppercase leading-none tracking-tight sm:text-6xl">
-        Horario de <span className="text-accent-text">clases</span>
-      </h1>
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+        <h1 className="font-display text-5xl font-extrabold uppercase leading-none tracking-tight sm:text-6xl">
+          Horario de <span className="text-accent-text">clases</span>
+        </h1>
+        {canUseAssistant && (
+          <Button variant="secondary" onClick={handleOpenAssistant}>
+            Reservar con IA
+          </Button>
+        )}
+      </div>
       <p className="mt-2 max-w-xl text-text-muted">
         Consulta las sesiones dirigidas y reserva tu plaza. Puedes cancelar hasta 2 horas antes
         de que empiece la clase.
@@ -239,6 +257,10 @@ export default function HorarioPage() {
           );
         })}
       </div>
+
+      {assistantOpen && (
+        <AssistantChatPanel onClose={() => setAssistantOpen(false)} onActionConfirmed={afterAction} />
+      )}
     </main>
   );
 }

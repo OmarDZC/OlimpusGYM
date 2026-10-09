@@ -82,10 +82,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Solo lo que necesitan los tres escenarios de e2e/ (login por rol, reservar/cancelar,
-      # cancelación de sesión por staff): ninguno usa IA, así que no hace falta ai-service.
-      - name: Levantar Postgres, backend y frontend
-        run: docker compose up -d --wait postgres redis rabbitmq backend frontend
+      # docker-compose.e2e.yml sustituye el LLM real por e2e/fake-llm (un doble en memoria,
+      # sin red externa): el escenario del asistente necesita una conversación con IA de
+      # verdad, y no queremos depender de un proveedor externo en cada push.
+      - name: Levantar Postgres, backend, servicio de IA (con LLM simulado) y frontend
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --wait --build \
+            postgres redis rabbitmq backend ai-service frontend fake-llm
 
       - name: Esperar a que el backend responda
         run: |
@@ -94,6 +97,14 @@ jobs:
             sleep 2
           done
           echo "El backend no respondió a tiempo" && exit 1
+
+      - name: Esperar a que el servicio de IA responda
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8000/health && exit 0
+            sleep 2
+          done
+          echo "El servicio de IA no respondió a tiempo" && exit 1
 
       - name: Esperar a que el frontend responda
         run: |
@@ -124,7 +135,7 @@ jobs:
 
       - name: Logs de Docker Compose (si algo falló)
         if: failure()
-        run: docker compose logs --tail=300
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml logs --tail=300
 
       - name: Subir el reporte de Playwright (si algo falló)
         if: failure()
