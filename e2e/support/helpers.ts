@@ -37,15 +37,18 @@ export async function logout(page: Page): Promise<void> {
  */
 export async function registerViaUi(
   page: Page,
-  { email, password, fullName }: { email: string; password: string; fullName: string },
+  { email, password, fullName, planCode }: { email: string; password: string; fullName: string; planCode?: "BASICA" | "COMPLETA" | "ATLETA_PRO" },
 ): Promise<void> {
   await page.goto("/acceso?modo=registro");
   await page.getByRole("tab", { name: "Crear cuenta" }).click();
   await page.getByLabel("Nombre completo").fill(fullName);
   await page.getByLabel("Correo electrónico").fill(email);
   await page.getByLabel("Contraseña").fill(password);
-  // La tarifa por defecto del formulario (Completa) incluye entrenador IA y asistente;
-  // no hace falta tocar el selector para estos tests.
+  // La tarifa por defecto del formulario es Completa (incluye entrenador IA y asistente);
+  // solo hace falta tocar el selector cuando el test necesita otra tarifa de partida.
+  if (planCode) {
+    await page.getByLabel("Tarifa").selectOption(planCode);
+  }
   await page.getByRole("button", { name: "Crear mi cuenta" }).click();
 }
 

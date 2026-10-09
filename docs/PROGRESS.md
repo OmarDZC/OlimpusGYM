@@ -13,6 +13,106 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 9b (commit 1) - Periodos de membresía y cambio de tarifa (2026-10-09)
+- Hecho:
+  - Migración `V5`: `memberships` gana `period_start`, `period_end`, `pending_plan_id` y
+    `renewal_notice_sent_at`; se retira `renews_at`. El backfill rellena el periodo de las filas
+    existentes a partir de `started_at` (un mes natural en UTC), así que ninguna cuenta del seed
+    ni de la demo se queda sin fecha de renovación real.
+  - `Membership` calcula su periodo solo (constructor y `renew()`), siempre con
+    `ZonedDateTime.ofInstant(..., ZoneOffset.UTC).plusMonths(1)` — mismo criterio que ya usaba
+    `BookingService` para el cupo mensual, para que no haya ambigüedad de cambio de hora.
+  - `ProrationCalculator` (nuevo, sin Spring): importe a pagar hoy al subir de tarifa, en
+    céntimos enteros — nunca con coma flotante. Días que quedan por redondeo hacia arriba (el
+    último día del periodo siempre cuenta como 1 día entero, igual que Stripe), redondeo final
+    al céntimo más cercano con mitad hacia arriba. `ProrationCalculatorTest` cubre inicio de
+    periodo, mitad, último día y una subida de dos escalones (Básica → Atleta Pro).
+  - `MembershipPlanService` (nuevo): reglas de negocio centralizadas — subir siempre al instante
+    y prorrateado, bajar siempre programado a la siguiente renovación, deshacer una bajada
+    pendiente, y un listado de opciones con el importe de cada una. La usan tanto el autoservicio
+    del socio (`MembershipController`, bajo `/api/v1/me/membership`: el identificador siempre
+    sale del token, nunca de un parámetro, así que un socio no puede tocar la membresía de otro
+    aunque lo intente) como el cambio de tarifa del dueño desde el panel
+    (`AdminMemberService.changePlan`, que ahora delega aquí en vez de cambiar el plan a pelo):
+    las mismas reglas, sin bifurcación de código.
+  - `MembershipRenewalScheduler` (nuevo, `@Scheduled` diario a las 03:00 UTC): renueva los
+    periodos ya terminados (con reintento en bucle si el job llevaba días sin correr y una
+    membresía tiene varios periodos vencidos), aplica la bajada programada si la había, cobra el
+    precio completo de la tarifa del periodo nuevo, y registra cada movimiento. Un segundo método
+    avisa ~3 días antes de la renovación (una sola vez por periodo, controlado con
+    `renewal_notice_sent_at`) a través de `MembershipNotifier` (nueva interfaz, misma idea que
+    `booking.Notifier`: por ahora solo escribe en log).
+  - Auditoría: tabla `membership_plan_changes` (quién, cuándo, de qué tarifa a cuál, tipo de
+    cambio, importe) con una fila por subida, programación/cancelación/aplicación de bajada y
+    renovación normal.
+  - API: `GET /me/membership/plan-options` (las tres tarifas con `direction` CURRENT/UPGRADE/
+    DOWNGRADE y el importe de hoy si aplica), `POST .../upgrade`, `POST .../schedule-downgrade`,
+    `POST .../cancel-downgrade`. Sin lógica de precios en el frontend: todo lo calcula el backend.
+  - Frontend: `/cuenta/cuota` muestra ya una fecha de renovación real (antes "Sin fecha fijada
+    (demo)"), un botón "Cambiar de tarifa" y, si hay una bajada programada, un aviso con
+    "Deshacer". Pantalla nueva `/cuenta/cuota/cambiar-tarifa`: las tres tarifas, la actual
+    marcada, "Subir ahora" con el importe de hoy en las más caras, "Cambiar en la próxima
+    renovación (fecha)" en las más baratas, y una confirmación explícita con el aviso de pago de
+    demostración antes de aplicar cualquier cambio. Los mensajes de tarifa insuficiente en el
+    asistente de reservas y en el entrenador con IA ahora enlazan aquí con el texto "Subir de
+    tarifa" (antes el del asistente decía "Ver mi tarifa" y no enlazaba a ningún sitio en el
+    entrenador).
+  - Tests backend nuevos: `MembershipPlanChangeHttpTest` (Testcontainers, reloj controlado):
+    subir prorrateado con su auditoría, no poder "subir" a la misma tarifa o a una más barata,
+    programar/deshacer una bajada, que subir cancele una bajada pendiente, que un socio nunca
+    pueda tocar la membresía de otro, renovación que aplica una bajada programada, renovación
+    normal que cobra el precio completo, y que el aviso de renovación salga una sola vez por
+    periodo. `AdminHttpTest` ampliado con el cambio de tarifa del dueño como subida inmediata y
+    como bajada programada (antes probaba una bajada esperando que se aplicase al instante, que
+    ya no es el comportamiento correcto).
+  - Tests end-to-end nuevos (Playwright, contra el stack real): un socio con tarifa Básica
+    intenta usar el asistente, ve el aviso con "Subir de tarifa", sube a Completa desde la
+    pantalla nueva y el asistente deja de estar bloqueado (necesita el LLM simulado de
+    `docker-compose.e2e.yml`); un socio con Atleta Pro programa una bajada a Básica y la deshace.
+  - **Fallo real encontrado y arreglado durante las pruebas:** `applyUpgrade` no cancelaba una
+    bajada ya programada al subir de tarifa (el campo `pending_plan_id` se quedaba con el valor
+    antiguo). Lo detectó el propio test `upgradingCancelsAPreviouslyScheduledDowngrade`, no una
+    revisión manual. Arreglado en `Membership.applyUpgrade`.
+  - Verificado en vivo contra Docker real (volumen de Postgres existente, con 119 usuarios ya
+    sembrados de sesiones anteriores): la migración `V5` se aplicó sin tocar nada a mano, Laura
+    (Completa) subió a Atleta Pro y vio el importe prorrateado correcto, programó una bajada a
+    Básica, la deshizo, y Marcos (Básica) subió a Completa y dejó de ver el aviso de tarifa en
+    "Entrenador con IA". Las cuentas de prueba se devolvieron a su tarifa original del seed al
+    terminar.
+- Decisiones / simplificaciones:
+  - Pago siempre simulado: no hay pasarela real todavía (Trozo 7/pagos sigue sin empezar). Cada
+    "cobro" es solo una fila en `membership_plan_changes`; la pantalla de confirmación lo deja
+    explícito ("Pago de demostración: no se cobra nada de verdad").
+  - Redondeo del prorrateo: mitad hacia arriba al céntimo, con los días restantes redondeados
+    siempre hacia arriba (el día en que cambias cuenta entero). Documentado en el javadoc de
+    `ProrationCalculator`, que es la única opción elegida entre las que planteaba `LOGIC.md` §12
+    como abiertas.
+  - La renovación automática (no manual) que ya asumía `LOGIC.md` §12 por defecto, sin volver a
+    abrir esa decisión.
+  - El panel del dueño (`MemberSummary`) no muestra todavía si un socio tiene una bajada
+    programada: no lo pedía este trozo y añadir ese dato ahí es una ampliación aparte, no un
+    cambio de comportamiento.
+  - No se tocó "Cancelar membresía" (sigue sin existir ninguna pantalla para ello): LOGIC.md §12
+    lo menciona pero no estaba en el encargo de este trozo.
+- Pendiente:
+  - Commit 2 de este mismo trozo (textos de "Mi cuota": quitar taquillas, beneficios por tarifa
+    desde los datos del plan, y el subtítulo de pago).
+  - La pasarela de pago real (Trozo 7, sigue aparte).
+- Cómo probarlo:
+  - Backend: `cd backend && mvn test`.
+  - Frontend: `cd frontend && npm run typecheck && npm run build`.
+  - E2E con el asistente: `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build postgres redis rabbitmq backend ai-service frontend fake-llm`, luego `cd e2e && npx playwright test`.
+  - De verdad: `docker compose up -d --build backend frontend`, entra en `/cuenta/cuota` con
+    cualquier cuenta de socio del seed y pulsa "Cambiar de tarifa".
+- Tests:
+  - `mvn test`: BUILD SUCCESS, **77/77 en verde** (14 nuevos: 9 en `MembershipPlanChangeHttpTest`,
+    4 en `ProrationCalculatorTest`, 1 más en `AdminHttpTest`).
+  - `npm run typecheck` y `npm run build`: sin errores, incluida la pantalla nueva.
+  - `npx playwright test`: **15/15 en verde** (2 nuevos: subida que desbloquea el asistente,
+    bajada programada y deshecha).
+
+---
+
 ### Bloque 3 - Usuario administrador de desarrollo (2026-10-09)
 - Hecho:
   - `DevDataSeeder` crea ahora, además del dueño de ejemplo (Javier M.), una cuenta OWNER de

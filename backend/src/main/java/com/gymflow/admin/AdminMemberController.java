@@ -39,7 +39,9 @@ public class AdminMemberController {
 
     // Solo OWNER: lo exige SecurityConfig (PATCH .../admin/members/{id}/plan), no este método.
     @PatchMapping("/{id}/plan")
-    public MemberSummary changePlan(@PathVariable UUID id, @Valid @RequestBody ChangePlanRequest request) {
-        return memberService.changePlan(TenantContext.require(), id, request.planCode(), true);
+    public MemberSummary changePlan(
+            @PathVariable UUID id, @Valid @RequestBody ChangePlanRequest request, Authentication authentication) {
+        UUID ownerUserId = (UUID) authentication.getPrincipal();
+        return memberService.changePlan(TenantContext.require(), ownerUserId, id, request.planCode(), true);
     }
 }

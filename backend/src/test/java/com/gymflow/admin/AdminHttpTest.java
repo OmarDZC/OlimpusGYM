@@ -156,19 +156,45 @@ class AdminHttpTest {
     }
 
     @Test
-    void ownerCanChangeMemberPlan() throws Exception {
+    void ownerSchedulesADowngradeForAMember_notAppliedUntilRenewal() throws Exception {
         createUser(tenant, "owner@test.local", Role.OWNER);
         plans.save(new Plan(tenant.getId(), PlanCode.BASICA, "Básica", 3900, 4, 7, false, false));
-        User member = createUser(tenant, "socio.plan2@test.local", Role.MEMBER);
+        User member = createUser(tenant, "socio.plan2@test.local", Role.MEMBER); // arranca en COMPLETA (5900)
         String ownerToken = loginAndGetToken("owner@test.local");
 
+        // BASICA es más barata que la tarifa actual del socio: el dueño también se somete a la
+        // regla de "bajar siempre se programa", no la aplica al instante (Trozo 9b).
         String body = objectMapper.writeValueAsString(new com.gymflow.admin.dto.ChangePlanRequest(PlanCode.BASICA));
         mvc.perform(patch("/api/v1/admin/members/" + member.getId() + "/plan")
                 .header("Authorization", "Bearer " + ownerToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
+            .andExpect(status().isOk());
+
+        Membership membership = memberships.findFirstByTenantIdAndUserIdOrderByStartedAtDesc(tenant.getId(), member.getId()).orElseThrow();
+        assertEquals(plan.getId(), membership.getPlanId(), "la tarifa actual no cambia hasta la renovación");
+        Plan basica = plans.findByTenantIdAndCode(tenant.getId(), PlanCode.BASICA).orElseThrow();
+        assertEquals(basica.getId(), membership.getPendingPlanId());
+    }
+
+    @Test
+    void ownerUpgradesAMemberImmediately() throws Exception {
+        createUser(tenant, "owner.sube@test.local", Role.OWNER);
+        plans.save(new Plan(tenant.getId(), PlanCode.ATLETA_PRO, "Atleta Pro", 7900, null, 30, true, true));
+        User member = createUser(tenant, "socio.plan3@test.local", Role.MEMBER); // arranca en COMPLETA (5900)
+        String ownerToken = loginAndGetToken("owner.sube@test.local");
+
+        String body = objectMapper.writeValueAsString(new com.gymflow.admin.dto.ChangePlanRequest(PlanCode.ATLETA_PRO));
+        mvc.perform(patch("/api/v1/admin/members/" + member.getId() + "/plan")
+                .header("Authorization", "Bearer " + ownerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.planCode").value("BASICA"));
+            .andExpect(jsonPath("$.planCode").value("ATLETA_PRO"));
+
+        Membership membership = memberships.findFirstByTenantIdAndUserIdOrderByStartedAtDesc(tenant.getId(), member.getId()).orElseThrow();
+        Plan atletaPro = plans.findByTenantIdAndCode(tenant.getId(), PlanCode.ATLETA_PRO).orElseThrow();
+        assertEquals(atletaPro.getId(), membership.getPlanId(), "subir se aplica al instante");
     }
 
     @Test

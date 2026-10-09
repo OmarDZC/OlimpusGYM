@@ -157,15 +157,66 @@ export type Membership = {
   planCode: PlanCode;
   planName: string;
   priceCents: number;
+  classesPerMonth: number | null;
   status: "ACTIVE" | "PAUSED" | "CANCELLED";
   startedAt: string;
-  renewsAt: string | null;
+  periodStart: string;
+  periodEnd: string;
   aiTrainer: boolean;
   aiAssistant: boolean;
+  pendingPlanCode: PlanCode | null;
+  pendingPlanName: string | null;
 };
 
 export async function fetchMembership(token: string): Promise<Membership> {
   const response = await fetch(`${API_URL}/api/v1/me/membership`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+/** {@code direction}: CURRENT (la que ya tiene), UPGRADE (se puede subir ya) o DOWNGRADE (se programaría). */
+export type PlanChangeOption = {
+  planCode: PlanCode;
+  planName: string;
+  priceCents: number;
+  direction: "CURRENT" | "UPGRADE" | "DOWNGRADE";
+  amountDueTodayCents: number | null;
+  effectiveAt: string | null;
+};
+
+export async function fetchPlanOptions(token: string): Promise<PlanChangeOption[]> {
+  const response = await fetch(`${API_URL}/api/v1/me/membership/plan-options`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function upgradeMembershipPlan(token: string, planCode: PlanCode): Promise<Membership> {
+  const response = await fetch(`${API_URL}/api/v1/me/membership/upgrade`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ planCode }),
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function scheduleMembershipDowngrade(token: string, planCode: PlanCode): Promise<Membership> {
+  const response = await fetch(`${API_URL}/api/v1/me/membership/schedule-downgrade`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ planCode }),
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function cancelScheduledDowngrade(token: string): Promise<Membership> {
+  const response = await fetch(`${API_URL}/api/v1/me/membership/cancel-downgrade`, {
+    method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) await throwProblem(response);

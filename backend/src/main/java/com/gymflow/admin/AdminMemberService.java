@@ -5,7 +5,7 @@ import com.gymflow.auth.Role;
 import com.gymflow.auth.User;
 import com.gymflow.auth.UserRepository;
 import com.gymflow.plan.Membership;
-import com.gymflow.plan.MembershipNotFoundException;
+import com.gymflow.plan.MembershipPlanService;
 import com.gymflow.plan.MembershipRepository;
 import com.gymflow.plan.Plan;
 import com.gymflow.plan.PlanRepository;
@@ -23,11 +23,17 @@ public class AdminMemberService {
     private final UserRepository users;
     private final MembershipRepository memberships;
     private final PlanRepository plans;
+    private final MembershipPlanService membershipPlanService;
 
-    public AdminMemberService(UserRepository users, MembershipRepository memberships, PlanRepository plans) {
+    public AdminMemberService(
+            UserRepository users,
+            MembershipRepository memberships,
+            PlanRepository plans,
+            MembershipPlanService membershipPlanService) {
         this.users = users;
         this.memberships = memberships;
         this.plans = plans;
+        this.membershipPlanService = membershipPlanService;
     }
 
     /** {@code includePricing}: solo OWNER ve el precio de la tarifa de cada socio (LOGIC.md §2). */
@@ -57,18 +63,21 @@ public class AdminMemberService {
         return toSummary(member, membership, plan, includePricing);
     }
 
-    // Solo OWNER (SecurityConfig: PATCH .../admin/members/{id}/plan).
+    /**
+     * Solo OWNER (SecurityConfig: PATCH .../admin/members/{id}/plan). Pasa por las mismas reglas
+     * de subir/bajar de tarifa que el autoservicio del socio (Trozo 9b), para que los periodos
+     * nunca se desincronicen según quién haga el cambio: subir se aplica al instante y prorratea;
+     * bajar se programa para la siguiente renovación, no se aplica ya.
+     */
     @Transactional
-    public MemberSummary changePlan(UUID tenantId, UUID memberId, com.gymflow.plan.PlanCode newPlanCode, boolean includePricing) {
-        Membership membership = memberships.findFirstByTenantIdAndUserIdOrderByStartedAtDesc(tenantId, memberId)
-                .orElseThrow(MembershipNotFoundException::new);
-        Plan newPlan = plans.findByTenantIdAndCode(tenantId, newPlanCode)
-                .orElseThrow(() -> new IllegalArgumentException("Tarifa no disponible: " + newPlanCode));
-        membership.changePlan(newPlan.getId());
-        memberships.save(membership);
+    public MemberSummary changePlan(UUID tenantId, UUID ownerUserId, UUID memberId, com.gymflow.plan.PlanCode newPlanCode, boolean includePricing) {
+        membershipPlanService.changePlanAsOwner(tenantId, ownerUserId, memberId, newPlanCode);
 
         User member = users.findById(memberId).orElseThrow(() -> new IllegalArgumentException("No existe ese socio"));
-        return toSummary(member, membership, newPlan, includePricing);
+        Membership membership = memberships.findFirstByTenantIdAndUserIdOrderByStartedAtDesc(tenantId, memberId)
+                .orElse(null);
+        Plan plan = membership != null ? plans.findById(membership.getPlanId()).orElse(null) : null;
+        return toSummary(member, membership, plan, includePricing);
     }
 
     private MemberSummary toSummary(User member, Membership membership, Map<UUID, Plan> planById, boolean includePricing) {

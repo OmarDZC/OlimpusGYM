@@ -1,6 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { MobileAccountNav } from "@/components/account/MobileAccountNav";
@@ -69,6 +70,7 @@ export default function EntrenadorIaPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [planForbidden, setPlanForbidden] = useState(false);
   const [plan, setPlan] = useState<GeneratedWeeklyPlan | null>(null);
 
   async function handleSubmit(event: React.FormEvent) {
@@ -80,6 +82,7 @@ export default function EntrenadorIaPage() {
 
     setSubmitting(true);
     setError(null);
+    setPlanForbidden(false);
     try {
       const result = await api.generateWorkoutPlan(token, {
         goal,
@@ -93,7 +96,11 @@ export default function EntrenadorIaPage() {
       });
       setPlan(result);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "No se pudo generar tu rutina. Inténtalo de nuevo.");
+      if (e instanceof ApiError && e.status === 403) {
+        setPlanForbidden(true);
+      } else {
+        setError(e instanceof ApiError ? e.message : "No se pudo generar tu rutina. Inténtalo de nuevo.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -197,6 +204,15 @@ export default function EntrenadorIaPage() {
               <p role="alert" className="rounded-control border border-danger/40 bg-danger/10 px-3.5 py-2.5 text-sm text-danger">
                 {error}
               </p>
+            )}
+
+            {planForbidden && (
+              <div role="alert" className="rounded-control border border-warning/40 bg-warning/10 px-3.5 py-2.5 text-sm text-text">
+                <p>Tu tarifa no incluye el entrenador con IA.</p>
+                <Link href="/cuenta/cuota/cambiar-tarifa" className="mt-1 inline-block text-accent-text hover:underline">
+                  Subir de tarifa
+                </Link>
+              </div>
             )}
 
             <Button type="submit" variant="primary" disabled={submitting} className="w-full">

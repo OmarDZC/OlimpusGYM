@@ -6,9 +6,15 @@ public record MembershipResponse(
     String planCode,
     String planName,
     int priceCents,
+    /** NULL = reservas ilimitadas. */
+    Integer classesPerMonth,
     String status,
     Instant startedAt,
-    Instant renewsAt,
+    Instant periodStart,
+    Instant periodEnd,
     boolean aiTrainer,
-    boolean aiAssistant) {
+    boolean aiAssistant,
+    /** Bajada de tarifa programada para la siguiente renovación, o NULL si no hay ninguna. */
+    String pendingPlanCode,
+    String pendingPlanName) {
 }

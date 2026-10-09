@@ -216,8 +216,8 @@ export function AssistantChatPanel({
         {planForbidden ? (
           <div className="border-t border-border p-4">
             <p className="text-sm text-text-muted">Tu tarifa no incluye el asistente con IA.</p>
-            <Link href="/cuenta/cuota" className="mt-2 inline-block text-sm text-accent-text hover:underline">
-              Ver mi tarifa
+            <Link href="/cuenta/cuota/cambiar-tarifa" className="mt-2 inline-block text-sm text-accent-text hover:underline">
+              Subir de tarifa
             </Link>
           </div>
         ) : (

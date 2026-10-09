@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import * as api from "@/lib/api";
-import type { Membership } from "@/lib/api";
+import { ApiError, type Membership } from "@/lib/api";
 
 const MADRID_TZ = "Europe/Madrid";
 
@@ -28,6 +29,7 @@ export default function MiCuotaPage() {
   const [membership, setMembership] = useState<Membership | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [undoing, setUndoing] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -37,6 +39,19 @@ export default function MiCuotaPage() {
       .catch(() => setError("No se pudo cargar tu cuota."))
       .finally(() => setLoading(false));
   }, [token]);
+
+  async function handleUndoDowngrade() {
+    if (!token || undoing) return;
+    setUndoing(true);
+    setError(null);
+    try {
+      setMembership(await api.cancelScheduledDowngrade(token));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "No se pudo deshacer el cambio. Inténtalo de nuevo.");
+    } finally {
+      setUndoing(false);
+    }
+  }
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
@@ -65,7 +80,29 @@ export default function MiCuotaPage() {
             <p className="mt-4 font-display text-4xl font-bold text-accent-text tabular-nums">
               {formatPrice(membership.priceCents)} € <span className="text-base font-sans text-text-muted">/mes</span>
             </p>
+            <Button href="/cuenta/cuota/cambiar-tarifa" variant="secondary" size="sm" className="mt-4">
+              Cambiar de tarifa
+            </Button>
           </Card>
+
+          {membership.pendingPlanName && (
+            <Card className="border-warning/40 bg-warning/5">
+              <p className="text-sm text-text">
+                Tienes programado un cambio a <span className="font-semibold">{membership.pendingPlanName}</span> para
+                el {formatDate(membership.periodEnd)}.
+              </p>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={undoing}
+                onClick={handleUndoDowngrade}
+                className="mt-3"
+              >
+                {undoing ? "Deshaciendo..." : "Deshacer"}
+              </Button>
+            </Card>
+          )}
 
           <Card>
             <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Incluye</p>
@@ -84,9 +121,7 @@ export default function MiCuotaPage() {
             </div>
             <div>
               <p className="text-text-muted">Próxima renovación</p>
-              <p className="font-medium text-text">
-                {membership.renewsAt ? formatDate(membership.renewsAt) : "Sin fecha fijada (demo)"}
-              </p>
+              <p className="font-medium text-text">{formatDate(membership.periodEnd)}</p>
             </div>
           </Card>
         </div>
