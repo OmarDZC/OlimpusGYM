@@ -103,6 +103,23 @@ Después, entra con una cuenta de tarifa Completa o Atleta Pro (p. ej.
 consulte el horario, reserve o cancele una clase. Solo ejecuta algo cuando confirmas la
 propuesta: hasta entonces puedes pedirle lo que quieras sin miedo a que reserve de verdad.
 
+## Credenciales de demo
+
+Solo existen con `SPRING_PROFILES_ACTIVE=dev` o `demo` (el valor por defecto de `make up`):
+el seed (`DevDataSeeder`) nunca se ejecuta en producción. La contraseña de todas las cuentas
+de ejemplo es `Demo1234!`, salvo la del administrador de desarrollo, pensada para entrar
+rápido sin memorizarla.
+
+| Rol | Correo | Contraseña | Notas |
+|---|---|---|---|
+| OWNER (dueño) | `javier@olympusgym.test` | `Demo1234!` | Cuenta de ejemplo del dueño |
+| OWNER (admin de desarrollo) | `omaradmin@gmail.com` | `omaradmin` | **Solo para desarrollo local**, no se despliega (ver abajo) |
+| STAFF | `marta@olympusgym.test` / `dani@olympusgym.test` | `Demo1234!` | Entrenadores de ejemplo |
+| MEMBER | `carlos@olympusgym.test` y 11 socios más | `Demo1234!` | Ver `DevDataSeeder` para la lista completa y sus tarifas |
+
+En producción (Trozo 8, pendiente) el administrador real se crea con las variables de entorno
+`ADMIN_EMAIL` y `ADMIN_PASSWORD` y una contraseña fuerte, no con estas credenciales de demo.
+
 ## Tests
 
 ```bash

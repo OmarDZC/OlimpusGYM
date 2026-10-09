@@ -60,6 +60,16 @@ public class DevDataSeeder implements CommandLineRunner {
     /** Contraseña de demo compartida por todas las cuentas del seed. Solo existe en dev/demo. */
     private static final String DEMO_PASSWORD = "Demo1234!";
 
+    /**
+     * Cuenta de administrador para desarrollo local (Bloque 3): correo y contraseña fáciles de
+     * recordar, pensada para entrar rápido sin memorizar ninguna de las cuentas de ejemplo.
+     * Mismo perfil dev/demo que el resto del seed, nunca en producción: el admin real de
+     * producción (Trozo 8) se crea con las variables de entorno ADMIN_EMAIL/ADMIN_PASSWORD y
+     * una contraseña fuerte, no con esto (ver docs/PROGRESS.md).
+     */
+    private static final String DEV_ADMIN_EMAIL = "omaradmin@gmail.com";
+    private static final String DEV_ADMIN_PASSWORD = "omaradmin";
+
     private record MemberSeed(String email, String fullName, PlanCode plan) {
     }
 
@@ -138,6 +148,7 @@ public class DevDataSeeder implements CommandLineRunner {
         Plan pro = ensurePlan(tenant, PlanCode.ATLETA_PRO, "Tarifa Atleta Pro", 7900, null, 14, true, true);
 
         ensureUser(tenant, "javier@olympusgym.test", "Javier M.", Role.OWNER);
+        ensureUser(tenant, DEV_ADMIN_EMAIL, "Omar (admin de desarrollo)", Role.OWNER, DEV_ADMIN_PASSWORD);
         User marta = ensureUser(tenant, "marta@olympusgym.test", "Marta Gómez", Role.STAFF);
         User dani = ensureUser(tenant, "dani@olympusgym.test", "Dani Rodríguez", Role.STAFF);
 
@@ -335,10 +346,17 @@ public class DevDataSeeder implements CommandLineRunner {
     }
 
     private User ensureUser(Tenant tenant, String email, String fullName, Role role) {
+        return ensureUser(tenant, email, fullName, role, DEMO_PASSWORD);
+    }
+
+    /** Igual que {@link #ensureUser(Tenant, String, String, Role)}, pero con una contraseña propia
+     * en vez de la compartida de demo (p. ej. el admin de desarrollo del Bloque 3). Mismo BCrypt
+     * que todas las demás: solo cambia el texto en claro que se cifra. */
+    private User ensureUser(Tenant tenant, String email, String fullName, Role role, String rawPassword) {
         if (users.existsByTenantIdAndEmailIgnoreCase(tenant.getId(), email)) {
             return users.findByEmailIgnoreCase(email).orElseThrow();
         }
-        User user = new User(tenant.getId(), email, passwordEncoder.encode(DEMO_PASSWORD), fullName, role);
+        User user = new User(tenant.getId(), email, passwordEncoder.encode(rawPassword), fullName, role);
         return users.save(user);
     }
 

@@ -13,6 +13,50 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Bloque 3 - Usuario administrador de desarrollo (2026-10-09)
+- Hecho:
+  - `DevDataSeeder` crea ahora, además del dueño de ejemplo (Javier M.), una cuenta OWNER de
+    desarrollo: `omaradmin@gmail.com` / `omaradmin`, con el mismo `PasswordEncoder` (BCrypt) que
+    el resto de cuentas del seed — la contraseña en claro cambia, el cifrado no.
+  - Sigue dentro de `@Profile({"dev", "demo"})`, como toda la clase: nunca se crea en
+    producción. `ensureUser` se amplió con una variante que acepta una contraseña propia (antes
+    todas las cuentas del seed usaban la misma `Demo1234!` compartida); ambas comparten la
+    misma comprobación de "si ya existe, no lo toques" — ni falla ni duplica si el contenedor se
+    reinicia o el seed se vuelve a ejecutar, igual que las demás cuentas de ejemplo.
+  - Verificado en vivo contra Docker real: login por `/acceso` → redirige a `/admin`, nombre
+    "Omar (admin de desarrollo)" con etiqueta "Dueño", ve los ingresos del mes (dato solo de
+    OWNER) y puede cambiar la tarifa de cualquier socio en `/admin/socios` (precio + selector +
+    "Guardar", lo mismo que ya veía Javier).
+  - Tests nuevos: `DevDataSeederAdminLoginTest` (perfil `dev` real, deja correr el seeder de
+    verdad contra una base limpia y hace login de la cuenta por `/auth/login`, comprobando rol
+    `OWNER`) y `DevDataSeederProductionProfileTest` (perfil `prod`: el bean `DevDataSeeder` ni
+    siquiera se registra en el contexto de Spring, no solo "no hace nada").
+  - README: tabla nueva "Credenciales de demo" (no existía ninguna todavía, solo menciones
+    sueltas) con las cuentas OWNER/STAFF/MEMBER del seed y la del admin de desarrollo marcada
+    explícitamente como solo-para-desarrollo.
+  - **Nota para producción (Trozo 8, pendiente):** el administrador real de producción se creará
+    con las variables de entorno `ADMIN_EMAIL` y `ADMIN_PASSWORD` (contraseña fuerte, generada,
+    nunca `omaradmin`) en un seeder o migración que solo corra fuera de `dev`/`demo` — ni esta
+    cuenta ni ninguna otra credencial de demo se despliegan nunca. Queda pendiente de
+    implementar junto con el resto de producción.
+- Decisiones / simplificaciones:
+  - No se le creó ninguna membresía: OWNER/STAFF nunca la tienen en este modelo de datos (solo
+    los MEMBER), y nada de `/admin` depende de que el dueño tenga una cuota.
+  - El nombre completo ("Omar (admin de desarrollo)") dice explícitamente que es una cuenta de
+    desarrollo, para que no se confunda con Javier (el dueño "de mentira" de la demo) si algún
+    día se ven juntos en alguna lista.
+- Pendiente: el admin real de producción (ver nota de arriba, Trozo 8).
+- Cómo probarlo:
+  - Backend: `cd backend && mvn test`.
+  - De verdad: `docker compose up -d --build backend`, entra en `/acceso` con
+    `omaradmin@gmail.com` / `omaradmin`.
+- Tests:
+  - `mvn test`: BUILD SUCCESS, **63/63 en verde** (2 nuevos: `DevDataSeederAdminLoginTest`,
+    `DevDataSeederProductionProfileTest`).
+  - Sin cambios en frontend/ai-service: no hizo falta repetir `npm run build` ni `pytest`.
+
+---
+
 ### Bloque 2 - Menú móvil del área de socio: quitar la hamburguesa, llegar a Mis reservas (2026-10-09)
 - Hecho:
   - Antes de empezar (Bloque 1): comprobada la CI de GitHub Actions de los dos últimos commits
