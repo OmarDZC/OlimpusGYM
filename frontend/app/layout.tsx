@@ -20,8 +20,17 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "OlympusGYM",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  title: {
+    default: "OlympusGYM",
+    template: "%s",
+  },
   description: "Reservas de clases con aforo, entrenador con inteligencia artificial y gestión para un gimnasio real.",
+  openGraph: {
+    siteName: "OlympusGYM",
+    type: "website",
+    locale: "es_ES",
+  },
 };
 
 // Se ejecuta antes de pintar para evitar el parpadeo del tema (DESIGN.md §2).

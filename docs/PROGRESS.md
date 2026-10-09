@@ -13,6 +13,130 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 7a - Web pública: páginas y contenido (2026-10-09)
+- Hecho:
+  - Backend: dos endpoints públicos nuevos, ya documentados en `LOGIC.md` §6 pero sin construir
+    hasta ahora.
+    - `GET /public/plans` (paquete `plan`): las tres tarifas activas, ordenadas por precio, sin
+      el precio del socio ni nada que requiera sesión — para que `/` y `/tarifas` no dupliquen a
+      mano lo que ya vive en el backend (igual que ya hace Mi cuota desde el Trozo 9b).
+    - `POST /public/contact` (paquete nuevo `contact`, migración `V6__contact_messages`):
+      valida con Bean Validation, rechaza con 400 si el campo trampa (`website`) llega relleno,
+      limita a 3 envíos cada 10 minutos por IP (`ContactRateLimiter`, en memoria — un único
+      backend en este MVP, suficiente sin Redis) devolviendo 429
+      (`TooManyContactAttemptsException`), guarda el mensaje y avisa por `ContactNotifier` (log),
+      mismo patrón que `booking.Notifier`/`plan.MembershipNotifier`.
+  - Frontend, tres páginas nuevas de la web pública recortada (sin tienda, sin varios centros,
+    sin NFC/pulseras/QR, sin taquillas, sin newsletter ni blog):
+    - `/` (reescrita): hero con el titular existente ("Forja tu propio Olimpo") y los botones
+      "Ver horario"/"Ver tarifas"; franja de cuatro beneficios (sala de pesas, clases dirigidas,
+      entrenador con IA, asistente de reservas); "Clases de hoy" con el horario real de hoy
+      (reutiliza `GET /public/schedule`, que ya nunca devuelve sesiones empezadas); resumen de
+      las tres tarifas reales; tres testimonios de ejemplo, etiquetados como tales; "Dónde
+      estamos" con dirección ficticia etiquetada y el horario real de la sala de pesas; pie de
+      página nuevo (`components/layout/Footer.tsx`, sin repetir el logo: ya sale una vez en
+      `TopNav`).
+    - `/tarifas` (nueva): las tres tarifas con precio y beneficios reales (mismo texto
+      data-driven que ya usa Mi cuota desde el Trozo 9b, sin "taquillas"), botón "Hazte socio"
+      (→ `/acceso?modo=registro`) o "Cambiar de tarifa" (→ Mi cuota) según haya o no sesión de
+      socio (`components/public/TarifaCta.tsx`), y una tabla de comparación accesible de verdad
+      (`<table>` con `scope="row"/"col"`, no una maqueta con `div`), con scroll horizontal en
+      móvil.
+    - `/contacto` (nueva): dirección, horario y contacto de ejemplo, y un formulario
+      (`components/public/ContactForm.tsx`) con nombre/correo/mensaje, un campo trampa oculto
+      con CSS (nunca `display:none`) y fuera del tabulador/lector de pantalla, mensajes de
+      éxito/error en español llano, y los errores de campo del backend mapeados uno a uno
+      (mismo patrón que ya usa `/acceso`).
+  - Arquitectura nueva en el frontend: hasta ahora todas las páginas eran `"use client"` (porque
+    dependían del contexto de sesión). Estas tres son Server Components (necesario para
+    `export const metadata` por página, que pedía el encargo) con islas `"use client"` solo
+    donde hace falta interactividad real (`ContactForm`, `TarifaCta`). Para que el propio
+    servidor de Next.js pueda llamar al backend necesitaba una URL distinta a la del navegador
+    (`lib/api-server.ts` + `API_INTERNAL_URL=http://backend:8080` en `docker-compose.yml`):
+    dentro de la red de Docker, "localhost" desde el contenedor del frontend es el propio
+    frontend, no el backend.
+  - SEO básico: `title`/`description`/Open Graph por página (`export const metadata`),
+    `app/robots.ts` (permite todo salvo `/cuenta` y `/admin`) y `app/sitemap.ts` con las cinco
+    rutas públicas, `metadataBase` añadido en `app/layout.tsx`.
+  - Móvil: comprobado que la cabecera sigue mostrando la hamburguesa en estas tres páginas
+    incluso con sesión de socio — a propósito, no un descuido: un test ya existente
+    (`member-mobile-menu.spec.ts`, Bloque 2) fija que fuera del área del socio
+    (`/cuenta/*`, `/horario`, `/entrenador-ia`) la hamburguesa se mantiene siempre, y estas tres
+    páginas nuevas son parte de la web pública, no del área del socio.
+  - Tests backend nuevos (Testcontainers): `PublicContactHttpTest` (guarda y avisa, rechaza
+    correo inválido, rechaza con el campo trampa relleno sin guardar nada, 429 al cuarto envío
+    desde la misma IP — cada test usa una IP distinta porque el limitador es un bean en memoria
+    compartido durante toda la clase) y `PublicPlanHttpTest` (las tres tarifas, ordenadas, sin
+    sesión).
+  - Tests end-to-end nuevos (`public-site.spec.ts`, contra el stack real): la portada se ve con
+    sus enlaces y las tarifas reales del backend; `/tarifas` muestra las tres tarifas reales, el
+    botón "Hazte socio" para quien no tiene sesión, y la tabla de comparación accesible;
+    `/contacto` enlaza bien desde el menú, envía el formulario con éxito, el campo trampa
+    rechaza, y el límite de envíos responde 429. El bloque de contacto corre en serie a
+    propósito (`test.describe.serial`): comparte IP de origen con el límite de envíos, así que
+    en paralelo competirían por el mismo cupo.
+  - Capturas en escritorio y móvil (comprobadas a mano contra `docs/design/v2/web-publica/screen.png`,
+    recortando lo que no toca este trozo): portada completa, `/tarifas` con sus tarjetas y la
+    tabla, `/contacto` con el formulario y la confirmación de envío. El estilo general (tokens,
+    tipografía, tarjetas sin sombra, insignias) coincide con la referencia; el contenido es el
+    recortado del encargo, no el completo de Stitch.
+- Decisiones / simplificaciones:
+  - **Sin fotos.** La referencia de Stitch usa fotografías en varias secciones (hero, "Nuestro
+    hierro"...), pero esas secciones quedaban fuera del recorte de este trozo y las que sí tocaba
+    construir (franja de beneficios, clases de hoy, tarifas, testimonios, dónde estamos) no las
+    necesitan: se resolvieron con tipografía, iconos de línea (`lucide-react`) y los tokens de
+    color. No se creó `docs/CREDITS.md` porque no hay ninguna imagen que acreditar; si una
+    sección futura (p. ej. el hero con vídeo del Trozo 7b) necesita fotos, ese es el momento de
+    crearlo.
+  - **Límite de envíos en memoria, no en Redis.** Un único backend en este MVP: un
+    `ConcurrentHashMap` por IP es sencillo, correcto y suficiente. Documentado en el propio
+    código que, con varias instancias del backend, tendría que pasar a Redis para compartir el
+    contador.
+  - **La IP del cliente es `request.getRemoteAddr()` tal cual**, sin mirar
+    `X-Forwarded-For`: no hay proxy inverso delante en este MVP. Si en el Trozo 8 se pone Caddy
+    delante, este punto habrá que revisarlo (y no fiarse de una cabecera que podría mandar el
+    cliente, solo de la que añada el proxy propio).
+  - **`/acceso` sigue con los precios de tarifa a mano** (`lib/roles.ts::planOptions`) en vez de
+    pasarlos a `GET /public/plans`, que ya existe: no tocar `/acceso` estaba fuera del recorte
+    de este trozo ("SOLO /, /tarifas y /contacto"). Comentario del archivo actualizado para que
+    no quede como si el endpoint aún no existiera.
+  - **`/tarifas` y la parte de tarifas de `/` piden siempre al backend en el momento**
+    (`cache: "no-store"`), sin caché de Next: la imagen de Docker no tiene red hacia el backend
+    durante `next build` (son contenedores aparte), así que cachear esa respuesta en el build
+    dejaría la página servida con una lista de tarifas vacía hasta la siguiente revalidación.
+    Más simple y seguro pedirla siempre en el momento, igual que ya hace "Clases de hoy".
+  - **Panel de gestión sin lista de mensajes de contacto.** No existía nada parecido en `/admin`
+    antes de este trozo, así que no se ha construido (quedaba fuera del encargo: "si no, anótalo
+    como pendiente, sin construirlo"). Los mensajes se guardan en `contact_messages` y quedan
+    visibles solo por log o consultando la base de datos directamente.
+  - Franja "En directo" (dato en vivo, `GET /public/live`) y el movimiento de `DESIGN.md` §6
+    quedan fuera a propósito: es el Trozo 7b, como pedía el encargo.
+- Pendiente:
+  - Trozo 7b: franja "En directo" con `GET /public/live`, y el movimiento (línea de pulso,
+    titular que cambia de palabra, horario tipo panel de estación, vídeo del hero, scroll
+    progresivo, micro-interacciones), todo con `prefers-reduced-motion`.
+  - Panel de gestión: lista de mensajes de contacto (ver nota de arriba).
+  - Fotos reales con licencia verificable, si se usan en el Trozo 7b (hero en vídeo) o más
+    adelante: por ahora no hace falta ninguna.
+- Cómo probarlo:
+  - Backend: `cd backend && mvn test`.
+  - Frontend: `cd frontend && npm run typecheck && npm run build`.
+  - E2E: `docker compose up -d --build backend frontend`, luego `cd e2e && npx playwright test`.
+  - De verdad: `docker compose up -d --build backend frontend`, abre `/`, `/tarifas` y
+    `/contacto`; en `/contacto` envía el formulario y comprueba
+    `docker compose exec postgres psql -U gymflow -d gymflow -c "SELECT * FROM contact_messages;"`.
+- Tests:
+  - `mvn test`: BUILD SUCCESS, **82/82 en verde** (5 nuevos: 4 en `PublicContactHttpTest`, 1 en
+    `PublicPlanHttpTest`).
+  - `npm run typecheck` y `npm run build`: sin errores; `/` y `/tarifas` salen como rutas
+    dinámicas (`ƒ`), el resto de páginas nuevas como estáticas (`○`).
+  - `npx playwright test`: **21/21 en verde** (6 nuevos en `public-site.spec.ts`), ejecutado
+    contra un backend recién arrancado (en caliente, repetir el bloque de contacto dentro de los
+    10 minutos agota su propio límite de envíos y el segundo pase falla — no pasa en CI, que
+    arranca un contenedor nuevo en cada ejecución).
+
+---
+
 ### Trozo 9b (commit 2) - Textos de Mi cuota (2026-10-09)
 - Hecho:
   - Quitadas las "taquillas" de lo que incluye la tarifa: el único sitio donde aparecían era el

@@ -8,6 +8,7 @@ import com.gymflow.auth.InvalidCredentialsException;
 import com.gymflow.booking.BookingNotAllowedException;
 import com.gymflow.booking.BookingNotFoundException;
 import com.gymflow.booking.SessionNotFoundException;
+import com.gymflow.contact.TooManyContactAttemptsException;
 import com.gymflow.plan.MembershipNotFoundException;
 import com.gymflow.workout.WorkoutNotAllowedException;
 import com.gymflow.workout.ai.TrainerFailedException;
@@ -99,5 +100,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AssistantFailedException.class)
     public ProblemDetail handleAssistantFailed(AssistantFailedException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, ex.getMessage());
+    }
+
+    @ExceptionHandler(TooManyContactAttemptsException.class)
+    public ProblemDetail handleTooManyContactAttempts(TooManyContactAttemptsException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+        problem.setTitle("Demasiados envíos");
+        return problem;
     }
 }

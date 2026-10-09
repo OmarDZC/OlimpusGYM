@@ -6,7 +6,10 @@ export const roleLabels: Record<Role, string> = {
   MEMBER: "Socio",
 };
 
-/** LOGIC.md §3. Hasta que exista GET /public/plans, los precios se mantienen aquí a mano. */
+/**
+ * LOGIC.md §3. Ya existe `GET /public/plans` (Trozo 7a, usado por `/` y `/tarifas`); este
+ * selector del registro se queda con los precios a mano por ahora, sin pasarlo a esa API.
+ */
 export const planOptions: { code: PlanCode; label: string }[] = [
   { code: "BASICA", label: "Básica · 39 €/mes" },
   { code: "COMPLETA", label: "Completa · 59 €/mes" },

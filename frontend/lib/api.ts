@@ -54,6 +54,16 @@ export async function register(input: {
   return response.json();
 }
 
+/** {@code website}: campo trampa oculto contra bots, debe llegar siempre vacío (ver /contacto). */
+export async function submitContact(input: { name: string; email: string; message: string; website: string }): Promise<void> {
+  const response = await fetch(`${API_URL}/api/v1/public/contact`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) await throwProblem(response);
+}
+
 export async function login(input: { email: string; password: string }): Promise<AuthResponse> {
   const response = await fetch(`${API_URL}/api/v1/auth/login`, {
     method: "POST",
