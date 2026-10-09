@@ -6,11 +6,13 @@ import { CalendarCheck, CreditCard, Dumbbell, Home, User } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 const ITEMS = [
-  { href: "/cuenta", label: "Inicio", icon: Home },
-  { href: "/horario", label: "Reservar", icon: CalendarCheck },
-  { href: "/cuenta/entrenamiento", label: "Entrenador", icon: Dumbbell },
-  { href: "/cuenta/cuota", label: "Mi cuota", icon: CreditCard },
-  { href: "/cuenta/perfil", label: "Perfil", icon: User },
+  { href: "/cuenta", label: "Inicio", icon: Home, activeOn: ["/cuenta"] },
+  { href: "/horario", label: "Reservar", icon: CalendarCheck, activeOn: ["/horario"] },
+  // El configurador real vive en /entrenador-ia (fuera de /cuenta); el stub de
+  // /cuenta/entrenamiento solo enlaza ahí, así que esta pestaña cuenta las dos como "activa".
+  { href: "/cuenta/entrenamiento", label: "Entrenador", icon: Dumbbell, activeOn: ["/cuenta/entrenamiento", "/entrenador-ia"] },
+  { href: "/cuenta/cuota", label: "Mi cuota", icon: CreditCard, activeOn: ["/cuenta/cuota"] },
+  { href: "/cuenta/perfil", label: "Perfil", icon: User, activeOn: ["/cuenta/perfil"] },
 ];
 
 /** Barra inferior de 5 pestañas en móvil (DESIGN.md §8: la referencia "le gusta como está"). */
@@ -24,7 +26,7 @@ export function MobileAccountNav() {
     >
       <div className="flex">
         {ITEMS.map((item) => {
-          const active = pathname === item.href;
+          const active = item.activeOn.includes(pathname);
           const Icon = item.icon;
           return (
             <Link

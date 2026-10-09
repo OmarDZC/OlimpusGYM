@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ReservarTabs } from "@/components/account/ReservarTabs";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -66,13 +67,12 @@ export default function MisReservasPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-4xl font-extrabold uppercase leading-none tracking-tight">Mis reservas</h1>
-        <Link href="/horario" className="text-sm text-accent-text hover:underline">
-          Ver horario →
-        </Link>
-      </div>
+      <h1 className="font-display text-4xl font-extrabold uppercase leading-none tracking-tight">Mis reservas</h1>
       <p className="mt-2 text-text-muted">Puedes cancelar hasta 2 horas antes de que empiece la clase.</p>
+
+      <div className="mt-6">
+        <ReservarTabs />
+      </div>
 
       {error && (
         <p

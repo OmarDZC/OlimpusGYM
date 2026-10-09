@@ -3,6 +3,7 @@
 import { Check } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { MobileAccountNav } from "@/components/account/MobileAccountNav";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -56,8 +57,9 @@ function ChoiceButton({
 }
 
 export default function EntrenadorIaPage() {
-  const { status, token } = useAuth();
+  const { status, user, token } = useAuth();
   const router = useRouter();
+  const canSeeOwnBookings = status === "signed-in" && user?.role === "MEMBER";
 
   const [goal, setGoal] = useState<TrainerGoal>("strength");
   const [level, setLevel] = useState<TrainerLevel>("intermediate");
@@ -98,7 +100,14 @@ export default function EntrenadorIaPage() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+    <main
+      className={cn(
+        "mx-auto max-w-5xl px-4 py-10 sm:px-6",
+        // Igual que /horario: vive fuera de /cuenta, así que repite a mano el hueco para la
+        // barra inferior fija en móvil, solo para un socio con sesión iniciada.
+        canSeeOwnBookings && "pb-20 md:pb-0",
+      )}
+    >
       <Badge tone="neutral">Planificación con IA</Badge>
       <h1 className="mt-4 font-display text-5xl font-extrabold uppercase leading-none tracking-tight sm:text-6xl">
         Tu entrenador, <span className="text-accent-text">siempre contigo</span>
@@ -248,6 +257,8 @@ export default function EntrenadorIaPage() {
           )}
         </Card>
       </div>
+
+      {canSeeOwnBookings && <MobileAccountNav />}
     </main>
   );
 }

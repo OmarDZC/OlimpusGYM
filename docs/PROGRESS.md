@@ -13,6 +13,68 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Bloque 2 - Menú móvil del área de socio: quitar la hamburguesa, llegar a Mis reservas (2026-10-09)
+- Hecho:
+  - Antes de empezar (Bloque 1): comprobada la CI de GitHub Actions de los dos últimos commits
+    ("clases pasadas" y "barra móvil"): en verde los cuatro jobs en ambos. Nada que arreglar.
+  - `TopNav` ya no pinta la hamburguesa ni su menú desplegable en móvil cuando la ruta es del
+    área de socio (`/cuenta/*`, `/horario`, `/entrenador-ia`) **y** quien mira ha iniciado
+    sesión como socio: ahí la cabecera se reduce al logo y el interruptor de tema (visible
+    directamente, ya no escondido dentro del menú desplegable). En escritorio no cambia nada
+    (sigue el mismo código de siempre); fuera del área de socio, o para staff/owner, la
+    hamburguesa sigue exactamente igual. La condición vive en un único sitio
+    (`lib/roles.ts::isMemberAreaPath`) para que no se desincronice de qué pantallas pintan la
+    barra inferior.
+  - `ReservarTabs` (nuevo, `components/account/ReservarTabs.tsx`): dos enlaces con pinta de
+    pestaña, "Horario" y "Mis reservas", arriba de `/horario` y de `/cuenta/reservas`. Son rutas
+    de verdad (`<Link>` normales con `aria-current="page"`, no un `role="tablist"` con paneles
+    por JavaScript: eso sería el patrón ARIA equivocado para algo que navega de verdad y se
+    puede enlazar). Es la única forma de llegar a "Mis reservas" en móvil, porque no es una de
+    las 5 pestañas de la barra inferior. De paso, en `/cuenta/reservas` sustituye al enlace
+    suelto "Ver horario →" que ya existía (misma función, ahora consistente con `/horario`).
+  - `/entrenador-ia` pinta ya la barra inferior (`MobileAccountNav`) para un socio con sesión,
+    con el mismo relleno inferior que `/horario`: la pestaña "Entrenador" de la barra ahora se
+    marca activa tanto en `/cuenta/entrenamiento` como en `/entrenador-ia` (antes solo en la
+    primera, aunque la segunda es la pantalla real del configurador).
+  - Revisadas una por una las pantallas del socio: `/cuenta`, `/cuenta/reservas`,
+    `/cuenta/entrenamiento`, `/cuenta/cuota`, `/cuenta/perfil`, `/horario`, `/entrenador-ia` — las
+    siete llevan ya la barra inferior en móvil. El chat del asistente (superpuesto sobre
+    `/horario`) la hereda de la pantalla que tapa, como ya se explicó en el Arreglo 2.
+  - Test end-to-end nuevo (`e2e/tests/member-mobile-menu.spec.ts`, 390×844): sin botón de
+    hamburguesa en ninguna de las 7 rutas del socio (y la barra inferior visible en todas),
+    la hamburguesa sigue existiendo fuera de esa zona, las pestañas Horario/Mis reservas
+    navegan de verdad entre las dos pantallas marcando `aria-current`, y en escritorio no
+    cambia nada. Ampliado también `mobile-bottom-nav.spec.ts` del Arreglo 2 con la ruta
+    `/entrenador-ia` que faltaba.
+  - Verificado a mano en el navegador: capturas de `/horario` en móvil (sin hamburguesa, con las
+    pestañas y la barra inferior) y en escritorio (sin cambios) enviadas al usuario; comprobado
+    también que `/` (pública) conserva la hamburguesa aunque el socio tenga sesión iniciada, y
+    que ninguna de las 5 pestañas de la barra queda marcada como activa en `/cuenta/reservas`
+    (no es una de ellas, es coherente que ninguna lo esté).
+- Decisiones / simplificaciones:
+  - Las pestañas Horario/Mis reservas se muestran también en escritorio (no solo en móvil): es
+    el mismo control sencillo en los dos tamaños, y en escritorio no estorba ni duplica nada que
+    ya hubiera (antes, en escritorio, tampoco había ninguna forma de ir de `/horario` a
+    `/cuenta/reservas` directamente).
+  - No se usó el patrón ARIA `role="tablist"`/`role="tab"` a propósito: ese patrón es para
+    paneles que cambian con JavaScript dentro de la misma página, no para enlaces que navegan a
+    rutas de verdad (lo que pedía el encargo: "que la ruta se pueda enlazar"). Usar ese rol ahí
+    habría sido una etiqueta ARIA engañosa para un lector de pantalla.
+- Pendiente: nada bloqueante.
+- Cómo probarlo:
+  - Frontend: `cd frontend && npm run typecheck && npm run build`.
+  - e2e: `npx playwright test member-mobile-menu mobile-bottom-nav` (con el stack en Docker).
+  - De verdad: `docker compose up -d --build frontend`, entra como socio, reduce el ancho del
+    navegador a móvil y recorre `/cuenta`, `/horario`, `/entrenador-ia`, `/cuenta/reservas`,
+    `/cuenta/entrenamiento`, `/cuenta/cuota`, `/cuenta/perfil`.
+- Tests:
+  - `npm run typecheck` y `npm run build`: sin errores, 16 páginas.
+  - `npx playwright test`: **13/13 en verde** (4 nuevos de `member-mobile-menu.spec.ts`),
+    repetido tres veces sin fallos intermitentes.
+  - Sin cambios en el backend: no hizo falta volver a correr `mvn test`.
+
+---
+
 ### Arreglo 2 - La barra inferior de móvil solo se veía en Inicio (2026-10-09)
 - Hecho:
   - **Causa encontrada**: la barra (`MobileAccountNav`) se pinta en `app/cuenta/layout.tsx`, que

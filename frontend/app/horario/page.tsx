@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MobileAccountNav } from "@/components/account/MobileAccountNav";
+import { ReservarTabs } from "@/components/account/ReservarTabs";
 import { AssistantChatPanel } from "@/components/assistant/AssistantChatPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
@@ -149,6 +150,12 @@ export default function HorarioPage() {
         Consulta las sesiones dirigidas y reserva tu plaza. Puedes cancelar hasta 2 horas antes
         de que empiece la clase.
       </p>
+
+      {canSeeOwnBookings && (
+        <div className="mt-6">
+          <ReservarTabs />
+        </div>
+      )}
 
       <div className="mt-8 max-w-xs">
         <label htmlFor="discipline-filter" className="sr-only">

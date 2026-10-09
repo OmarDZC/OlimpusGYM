@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Logo } from "@/components/Logo";
@@ -9,7 +10,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { cn } from "@/lib/cn";
-import { homeForRole } from "@/lib/roles";
+import { homeForRole, isMemberAreaPath } from "@/lib/roles";
 
 const navLinks = [
   { label: "Horario", href: "/horario" },
@@ -63,9 +64,17 @@ function AuthActions({ stretch = false }: { stretch?: boolean }) {
   );
 }
 
-/** Navegación superior sin barra lateral (DESIGN.md §4 y §8). Hamburguesa en móvil. */
+/**
+ * Navegación superior sin barra lateral (DESIGN.md §4 y §8). Hamburguesa en móvil, salvo en
+ * la zona del socio (`/cuenta/*`, `/horario`, `/entrenador-ia` con sesión de MEMBER): ahí la
+ * barra inferior (`MobileAccountNav`) ya hace de menú, así que en móvil la cabecera se reduce
+ * al logo y el interruptor de tema; en escritorio no cambia nada.
+ */
 export function TopNav() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+  const { status, user } = useAuth();
+  const inMemberArea = status === "signed-in" && user?.role === "MEMBER" && isMemberAreaPath(pathname);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur">
@@ -92,18 +101,24 @@ export function TopNav() {
           <AuthActions />
         </div>
 
-        <button
-          type="button"
-          onClick={() => setMobileOpen((v) => !v)}
-          aria-expanded={mobileOpen}
-          aria-label={mobileOpen ? "Cerrar menú" : "Abrir menú"}
-          className="inline-flex items-center justify-center rounded-control p-2 text-text md:hidden"
-        >
-          {mobileOpen ? <X size={22} /> : <Menu size={22} />}
-        </button>
+        {inMemberArea ? (
+          <div className="md:hidden">
+            <ThemeToggle />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setMobileOpen((v) => !v)}
+            aria-expanded={mobileOpen}
+            aria-label={mobileOpen ? "Cerrar menú" : "Abrir menú"}
+            className="inline-flex items-center justify-center rounded-control p-2 text-text md:hidden"
+          >
+            {mobileOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
+        )}
       </div>
 
-      {mobileOpen && (
+      {!inMemberArea && mobileOpen && (
         <nav className="border-t border-border px-4 py-4 md:hidden" aria-label="Navegación móvil">
           <ul className="flex flex-col gap-1">
             {navLinks.map((link) => (

@@ -6,7 +6,7 @@ import { DEMO_PASSWORD, registerViaUi, uniqueEmail } from "../support/helpers";
  * ("Reservar" en la propia barra) vive fuera del layout de /cuenta y no la heredaba. En móvil
  * debe verse en todas las pantallas del socio; en escritorio, nunca (se queda el menú superior).
  */
-const MEMBER_ROUTES = ["/cuenta", "/horario", "/cuenta/reservas", "/cuenta/entrenamiento", "/cuenta/cuota", "/cuenta/perfil"];
+const MEMBER_ROUTES = ["/cuenta", "/horario", "/entrenador-ia", "/cuenta/reservas", "/cuenta/entrenamiento", "/cuenta/cuota", "/cuenta/perfil"];
 
 test.describe("Barra inferior en móvil", () => {
   test.use({ viewport: { width: 390, height: 844 } });
@@ -51,6 +51,8 @@ test.describe("Barra inferior en escritorio", () => {
 
     await page.goto("/horario");
     await expect(page.getByRole("navigation", { name: "Navegación de tu cuenta" })).toBeHidden();
-    await expect(page.getByRole("link", { name: "Horario" })).toBeVisible();
+    // "Horario" también aparece en las pestañas Horario/Mis reservas (Bloque 2): se acota al
+    // menú superior para no chocar con ese otro enlace, igual de válido, al mismo texto.
+    await expect(page.getByRole("navigation", { name: "Navegación principal" }).getByRole("link", { name: "Horario" })).toBeVisible();
   });
 });
