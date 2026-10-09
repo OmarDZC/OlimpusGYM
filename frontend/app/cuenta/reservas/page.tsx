@@ -26,6 +26,7 @@ function formatDateTime(iso: string): string {
 export default function MisReservasPage() {
   const { token } = useAuth();
   const [bookings, setBookings] = useState<MyBooking[]>([]);
+  const [history, setHistory] = useState<MyBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -34,8 +35,9 @@ export default function MisReservasPage() {
     if (!token) return;
     setLoading(true);
     try {
-      const data = await api.fetchMyBookings(token);
-      setBookings(data.filter((b) => b.status === "BOOKED" || b.status === "WAITLIST"));
+      const [active, past] = await Promise.all([api.fetchMyBookings(token), api.fetchMyBookingsHistory(token)]);
+      setBookings(active);
+      setHistory(past);
     } catch {
       setError("No se pudieron cargar tus reservas.");
     } finally {
@@ -86,7 +88,7 @@ export default function MisReservasPage() {
         {!loading && bookings.length === 0 && (
           <Card>
             <p className="text-sm text-text-muted">
-              Todavía no tienes ninguna reserva.{" "}
+              Todavía no tienes ninguna reserva próxima.{" "}
               <Link href="/horario" className="text-accent-text hover:underline">
                 Reserva tu primera clase
               </Link>
@@ -117,6 +119,27 @@ export default function MisReservasPage() {
           </Card>
         ))}
       </div>
+
+      {!loading && history.length > 0 && (
+        <div className="mt-10">
+          <h2 className="font-display text-2xl font-bold uppercase tracking-tight">Historial</h2>
+          <p className="mt-1 text-sm text-text-muted">Clases que ya han pasado.</p>
+          <div className="mt-4 flex flex-col gap-3">
+            {history.map((booking) => (
+              <Card key={booking.id} className="flex flex-wrap items-center justify-between gap-4 opacity-80">
+                <div>
+                  <Badge tone="neutral">{booking.status === "WAITLIST" ? "Estuviste en espera" : "Reservada"}</Badge>
+                  <p className="mt-1 font-display text-lg font-bold uppercase tracking-tight">{booking.sessionName}</p>
+                  <p className="text-sm text-text-muted">
+                    {formatDateTime(booking.startsAt)} · {booking.room}
+                    {booking.coachName ? ` · ${booking.coachName}` : ""}
+                  </p>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

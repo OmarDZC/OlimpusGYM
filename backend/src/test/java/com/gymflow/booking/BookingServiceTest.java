@@ -15,6 +15,7 @@ import com.gymflow.plan.PlanCode;
 import com.gymflow.plan.PlanRepository;
 import com.gymflow.tenant.Tenant;
 import com.gymflow.tenant.TenantRepository;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -26,11 +27,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -80,6 +83,9 @@ class BookingServiceTest {
     @Autowired
     PasswordEncoder passwordEncoder;
 
+    @MockitoBean
+    Clock clock;
+
     private Tenant tenant;
     private Plan unlimitedPlan;
     private Plan limitedPlan;
@@ -90,6 +96,9 @@ class BookingServiceTest {
         tenant = tenants.save(new Tenant("Tenant " + unique, "tenant-" + unique));
         unlimitedPlan = plans.save(new Plan(tenant.getId(), PlanCode.COMPLETA, "Completa", 5900, null, 14, true, true));
         limitedPlan = plans.save(new Plan(tenant.getId(), PlanCode.BASICA, "Basica", 3900, 4, 7, false, false));
+        // Instantánea fija de "ahora": de sobra para todos los tests existentes (usan
+        // desplazamientos de horas/días), y los tests con reloj controlado la sobrescriben.
+        Mockito.when(clock.instant()).thenReturn(Instant.now());
     }
 
     private User createMember(Plan plan) {
@@ -290,5 +299,95 @@ class BookingServiceTest {
         assertThrows(
                 BookingNotFoundException.class,
                 () -> bookingService.cancel(tenant.getId(), intruder.getId(), booking.getId()));
+    }
+
+    // ---- Clases pasadas, con reloj controlado (arreglo del fallo de "próxima clase") ----
+
+    @Test
+    void cannotCancelAClassThatAlreadyStarted_givesADifferentMessageThanTheTwoHourWindow() {
+        Instant referenceNow = Instant.parse("2026-10-09T12:00:00Z");
+        Instant sessionStart = referenceNow.minus(1, ChronoUnit.HOURS); // empezó hace una hora
+        ClassSession session = createSession(sessionStart, 10);
+        User member = createMember(unlimitedPlan);
+
+        // La reserva se creó de verdad cuando la clase todavía era futura (igual que en el bug
+        // real: nadie canceló a tiempo y la clase pasó sola). Se inserta directamente para no
+        // depender de encadenar dos "ahora" distintos en el mismo test.
+        Booking booking = bookings.save(new Booking(tenant.getId(), session.getId(), member.getId(), BookingStatus.BOOKED, null));
+
+        Mockito.when(clock.instant()).thenReturn(referenceNow);
+
+        SessionAlreadyStartedException ex = assertThrows(
+                SessionAlreadyStartedException.class,
+                () -> bookingService.cancel(tenant.getId(), member.getId(), booking.getId()));
+        assertEquals("Esta clase ya ha empezado, no se puede cancelar.", ex.getMessage());
+    }
+
+    @Test
+    void canCancelAClassThatStartsInThreeHours() {
+        Instant referenceNow = Instant.parse("2026-10-09T12:00:00Z");
+        ClassSession session = createSession(referenceNow.plus(3, ChronoUnit.HOURS), 10);
+        User member = createMember(unlimitedPlan);
+        Mockito.when(clock.instant()).thenReturn(referenceNow);
+        Booking booking = bookingService.book(tenant.getId(), member.getId(), session.getId());
+
+        bookingService.cancel(tenant.getId(), member.getId(), booking.getId());
+
+        assertEquals(BookingStatus.CANCELLED, bookings.findById(booking.getId()).orElseThrow().getStatus());
+    }
+
+    @Test
+    void cannotBookAClassThatAlreadyStarted_withControlledClock() {
+        Instant referenceNow = Instant.parse("2026-10-09T12:00:00Z");
+        ClassSession yesterday = createSession(referenceNow.minus(1, ChronoUnit.DAYS), 10);
+        User member = createMember(unlimitedPlan);
+        Mockito.when(clock.instant()).thenReturn(referenceNow);
+
+        assertThrows(
+                BookingNotAllowedException.class,
+                () -> bookingService.book(tenant.getId(), member.getId(), yesterday.getId()));
+    }
+
+    @Test
+    void staffCancellingAnAlreadyStartedSessionDoesNotPromoteTheWaitlist() {
+        Instant referenceNow = Instant.parse("2026-10-09T12:00:00Z");
+        Instant future = referenceNow.plus(1, ChronoUnit.DAYS);
+        ClassSession session = createSession(future, 1);
+        User booked = createMember(unlimitedPlan);
+        User waiting = createMember(unlimitedPlan);
+
+        Mockito.when(clock.instant()).thenReturn(referenceNow);
+        Booking bookedBooking = bookingService.book(tenant.getId(), booked.getId(), session.getId());
+        Booking waitlistBooking = bookingService.book(tenant.getId(), waiting.getId(), session.getId());
+        assertEquals(BookingStatus.WAITLIST, waitlistBooking.getStatus());
+
+        // La clase ya ha pasado cuando staff decide (tarde) cancelar la reserva confirmada.
+        Mockito.when(clock.instant()).thenReturn(future.plus(2, ChronoUnit.HOURS));
+        bookingService.cancelAsStaff(tenant.getId(), bookedBooking.getId());
+
+        Booking stillWaiting = bookings.findById(waitlistBooking.getId()).orElseThrow();
+        assertEquals(BookingStatus.WAITLIST, stillWaiting.getStatus(), "no se debe promocionar a una clase ya empezada");
+    }
+
+    @Test
+    void handlesTheEuropeMadridDaylightSavingChangeCorrectly() {
+        // Último domingo de octubre de 2026: a las 03:00 hora de Madrid (CEST, UTC+2) los
+        // relojes retroceden a las 02:00 (CET, UTC+1). Una sesión a las 02:30 hora local justo
+        // ese día es ambigua en hora local, pero en UTC (lo que guarda y compara el backend)
+        // sigue siendo un instante exacto sin ambigüedad: la comparación no se entera del cambio.
+        Instant sessionStartUtc = Instant.parse("2026-10-25T01:30:00Z"); // 03:30 CEST / tras el cambio, 02:30 CET
+        ClassSession session = createSession(sessionStartUtc, 10);
+        User member = createMember(unlimitedPlan);
+
+        Mockito.when(clock.instant()).thenReturn(sessionStartUtc.minus(3, ChronoUnit.HOURS));
+        Booking booking = bookingService.book(tenant.getId(), member.getId(), session.getId());
+        bookingService.cancel(tenant.getId(), member.getId(), booking.getId());
+        assertEquals(BookingStatus.CANCELLED, bookings.findById(booking.getId()).orElseThrow().getStatus());
+
+        User member2 = createMember(unlimitedPlan);
+        Mockito.when(clock.instant()).thenReturn(sessionStartUtc.plus(10, ChronoUnit.MINUTES));
+        assertThrows(
+                BookingNotAllowedException.class,
+                () -> bookingService.book(tenant.getId(), member2.getId(), session.getId()));
     }
 }

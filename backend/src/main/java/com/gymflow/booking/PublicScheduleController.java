@@ -3,6 +3,7 @@ package com.gymflow.booking;
 import com.gymflow.booking.dto.SessionSummary;
 import com.gymflow.tenant.Tenant;
 import com.gymflow.tenant.TenantRepository;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -21,10 +22,12 @@ public class PublicScheduleController {
 
     private final ScheduleService scheduleService;
     private final TenantRepository tenants;
+    private final Clock clock;
 
-    public PublicScheduleController(ScheduleService scheduleService, TenantRepository tenants) {
+    public PublicScheduleController(ScheduleService scheduleService, TenantRepository tenants, Clock clock) {
         this.scheduleService = scheduleService;
         this.tenants = tenants;
+        this.clock = clock;
     }
 
     @GetMapping
@@ -38,7 +41,12 @@ public class PublicScheduleController {
                 .orElseThrow(() -> new IllegalStateException("No existe el tenant por defecto"))
                 .getId();
 
-        Instant fromInstant = parseOrDefault(from, Instant.now());
+        Instant now = clock.instant();
+        Instant requestedFrom = parseOrDefault(from, now);
+        // Nunca devolver sesiones ya empezadas, aunque pidan explícitamente "desde medianoche de
+        // hoy" (lo que hace /horario al consultar el día de hoy): eso incluiría clases de esta
+        // mañana que ya han pasado.
+        Instant fromInstant = requestedFrom.isBefore(now) ? now : requestedFrom;
         Instant toInstant = parseOrDefault(to, fromInstant.plusSeconds(DEFAULT_WINDOW_DAYS * 24 * 3600));
 
         return scheduleService.listSchedule(tenantId, fromInstant, toInstant, discipline, coachId, room);

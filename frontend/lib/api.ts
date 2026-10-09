@@ -118,8 +118,18 @@ export async function fetchSchedule(params: {
   return response.json();
 }
 
+/** Solo clases futuras, la más próxima primero (el backend ya filtra y ordena). */
 export async function fetchMyBookings(token: string): Promise<MyBooking[]> {
   const response = await fetch(`${API_URL}/api/v1/me/bookings`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+/** Clases ya pasadas con una reserva activa, la más reciente primero: "Historial" en Mis reservas. */
+export async function fetchMyBookingsHistory(token: string): Promise<MyBooking[]> {
+  const response = await fetch(`${API_URL}/api/v1/me/bookings/history`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) await throwProblem(response);

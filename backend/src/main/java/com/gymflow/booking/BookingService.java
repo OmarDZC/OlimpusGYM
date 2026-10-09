@@ -5,6 +5,7 @@ import com.gymflow.plan.MembershipRepository;
 import com.gymflow.plan.MembershipStatus;
 import com.gymflow.plan.Plan;
 import com.gymflow.plan.PlanRepository;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
@@ -29,18 +30,21 @@ public class BookingService {
     private final MembershipRepository memberships;
     private final PlanRepository plans;
     private final Notifier notifier;
+    private final Clock clock;
 
     public BookingService(
             ClassSessionRepository sessions,
             BookingRepository bookings,
             MembershipRepository memberships,
             PlanRepository plans,
-            Notifier notifier) {
+            Notifier notifier,
+            Clock clock) {
         this.sessions = sessions;
         this.bookings = bookings;
         this.memberships = memberships;
         this.plans = plans;
         this.notifier = notifier;
+        this.clock = clock;
     }
 
     @Transactional
@@ -54,7 +58,7 @@ public class BookingService {
             return existing.get();
         }
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         if (session.getStatus() != SessionStatus.SCHEDULED) {
             throw new BookingNotAllowedException("Esta sesión está cancelada.");
         }
@@ -117,8 +121,12 @@ public class BookingService {
 
         ensureCancellable(booking);
 
+        Instant now = clock.instant();
+        if (!session.getStartsAt().isAfter(now)) {
+            throw new SessionAlreadyStartedException();
+        }
         Instant limit = session.getStartsAt().minus(CANCELLATION_WINDOW_HOURS, ChronoUnit.HOURS);
-        if (!Instant.now().isBefore(limit)) {
+        if (!now.isBefore(limit)) {
             throw new CancellationWindowClosedException();
         }
 
@@ -186,7 +194,16 @@ public class BookingService {
         }
     }
 
+    /**
+     * Nunca promociona a alguien de la lista de espera a una clase que ya ha empezado: esto
+     * solo puede pasar si staff cancela una reserva de una sesión ya en marcha (el propio socio
+     * no puede llegar aquí: {@link #cancel} ya rechaza cancelar una clase empezada). La persona
+     * en espera se queda donde está; no tiene sentido "reservarle" algo que ya está pasando.
+     */
     private void promoteNextFromWaitlist(ClassSession session) {
+        if (!session.getStartsAt().isAfter(clock.instant())) {
+            return;
+        }
         bookings.findFirstBySessionIdAndStatusOrderByWaitlistPositionAsc(session.getId(), BookingStatus.WAITLIST)
                 .ifPresent(next -> {
                     Integer promotedPosition = next.getWaitlistPosition();

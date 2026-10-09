@@ -32,7 +32,13 @@ public class BookingController {
 
     @GetMapping
     public List<MyBookingResponse> myBookings(Authentication authentication) {
-        return scheduleService.listForUser(TenantContext.require(), userId(authentication));
+        return scheduleService.listUpcomingForUser(TenantContext.require(), userId(authentication));
+    }
+
+    /** Clases ya pasadas con una reserva activa (BOOKED/WAITLIST): LOGIC.md §5, "Historial" en Mis reservas. */
+    @GetMapping("/history")
+    public List<MyBookingResponse> myBookingsHistory(Authentication authentication) {
+        return scheduleService.listHistoryForUser(TenantContext.require(), userId(authentication));
     }
 
     @PostMapping

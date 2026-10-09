@@ -13,6 +13,89 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Arreglo 1 - "Tu próxima clase" enseñaba una clase ya pasada (2026-10-09)
+- Hecho:
+  - **Causa encontrada**: `GET /me/bookings` devolvía las reservas activas (BOOKED/WAITLIST) sin
+    filtrar por si la clase ya había empezado, **ordenadas por cuándo se creó la reserva**
+    (`createdAt`), no por cuándo empieza la clase (`startsAt`). `NextClassCard` cogía
+    `bookings[0]` a ciegas: si la reserva más antigua (la primera creada) resultaba ser de una
+    clase que ya había pasado, se mostraba como "tu próxima clase". Al intentar cancelarla, el
+    único cálculo que existía era el de la ventana de 2 horas, que con una clase ya terminada da
+    un resultado técnicamente cierto pero con un mensaje que no explica lo que de verdad pasa.
+  - `Clock` inyectable nuevo (`com.gymflow.config.ClockConfig`, `Clock.systemUTC()` en
+    producción): sustituye a los `Instant.now()` sueltos de `BookingService`,
+    `PublicScheduleController` y `ScheduleService`, para que los tests puedan fijar "ahora" con
+    `@MockitoBean Clock` en vez de depender del reloj real de la máquina.
+  - `GET /me/bookings` ahora solo devuelve clases que **todavía no han empezado**, ordenadas por
+    la más próxima primero (`ScheduleService.listUpcomingForUser`). Arregla "tu próxima clase" y
+    la lista de reservas activas de "Mis reservas" sin tocar el frontend de ninguna de las dos:
+    las dos ya hacían `bookings[0]`/pintaban la lista tal cual venía.
+  - `GET /me/bookings/history` (nuevo): las mismas reservas activas pero de clases que **ya han
+    pasado**, la más reciente primero (`listHistoryForUser`). Nueva sección "Historial" en
+    `/cuenta/reservas`, sin botón de cancelar.
+  - Backend: `BookingService.cancel()` ahora distingue dos casos antes de dejar cancelar: si la
+    clase ya ha empezado, `SessionAlreadyStartedException` ("Esta clase ya ha empezado, no se
+    puede cancelar."); si no, pero quedan menos de 2 horas, el mensaje de siempre
+    (`CancellationWindowClosedException`). `BookingService.book()` ya rechazaba reservar una
+    clase empezada (LOGIC.md §5.2, desde el Trozo 2); se quedó igual, solo pasó a usar el reloj
+    inyectado.
+  - `PublicScheduleController` nunca devuelve ya una sesión empezada, **aunque se la pidan
+    explícitamente**: antes, si `from` pedía "medianoche de hoy" (justo lo que manda `/horario`
+    al consultar el día de hoy), una clase de esta mañana que ya había pasado seguía saliendo en
+    el horario público como si se pudiera reservar. Ahora el `from` efectivo nunca es anterior a
+    "ahora". Esto arregla de paso el horario público **y el asistente de IA** (`listar_clases`
+    llama a este mismo endpoint, sin tocar nada en `ai-service`) sin duplicar la regla en dos
+    sitios.
+  - `BookingService.promoteNextFromWaitlist` ya no promociona a nadie de la lista de espera a
+    una clase que ya ha empezado: solo puede pasar si staff cancela (tarde) la reserva confirmada
+    de una sesión ya en marcha, porque el propio socio ya no puede llegar ahí (su `cancel()`
+    rechaza clases empezadas antes de llegar a promocionar a nadie).
+  - Revisado el panel de gestión: `AdminSessionController`/`AdminBookingController` mantienen a
+    propósito su ventana de 24 h hacia atrás (para que staff vea sesiones recién terminadas), así
+    que no se tocaron; el único riesgo real ahí era la promoción de la lista de espera, ya
+    cubierta arriba.
+  - Tests con reloj controlado: clase de ayer, dentro de 1 hora y dentro de 3 horas, cubriendo
+    cancelar (mensaje distinto si ya empezó), reservar (sigue rechazado), próxima clase/historial
+    (divididas y ordenadas bien) y que staff no promocione a nadie a una clase ya empezada. Test
+    aparte para el cambio de hora de Europe/Madrid (último domingo de octubre): como todas las
+    comparaciones son instante-contra-instante (nunca fecha de calendario), el cambio de hora no
+    puede romper nada por construcción; el test lo deja documentado con una sesión justo en esa
+    franja.
+  - Verificado en vivo contra Docker real con el caso exacto que describiste (Carlos, "Boxeo
+    Técnico y Saco", jueves 08 oct 20:30): `GET /me/bookings` ya no lo trae, `GET
+    /me/bookings/history` sí; `/cuenta` muestra "Todavía no tienes ninguna reserva próxima";
+    `/cuenta/reservas` lo mueve a "Historial" sin botón de cancelar; `DELETE` sobre esa reserva
+    responde 409 con "Esta clase ya ha empezado, no se puede cancelar." en vez del mensaje de las
+    2 horas. Capturas revisadas a mano en el navegador.
+- Decisiones / simplificaciones:
+  - "Historial" en `/cuenta/reservas` muestra solo reservas `BOOKED`/`WAITLIST` cuya clase ya
+    pasó (exactamente el conjunto del bug): no incluye reservas `CANCELLED`/`ATTENDED`/`NO_SHOW`,
+    porque eso sería un historial de reservas más amplio que nadie pidió y que el modelo de
+    datos tampoco rellena todavía (nada transiciona a `ATTENDED`/`NO_SHOW` hoy).
+  - El `Clock` no se inyectó en todas partes donde aparecía `Instant.now()` (p. ej.
+    `AdminSummaryService`, los `createdAt` de las entidades): solo donde hacía falta para esta
+    regla de negocio y sus tests. Meterlo también en sitios sin relación habría sido tocar cosas
+    de más sin que lo pidiera el arreglo.
+  - El asistente de IA no necesitó ningún cambio: al heredar el filtro de "ya no hay clases
+    pasadas" tanto de `GET /me/bookings` (su herramienta `mis_reservas`) como de
+    `GET /public/schedule` (su herramienta `listar_clases`), nunca llega a proponer reservar ni
+    cancelar algo que ya ha pasado.
+- Pendiente: nada bloqueante.
+- Cómo probarlo:
+  - Backend: `cd backend && mvn test`.
+  - De verdad: `docker compose up -d --build backend frontend`, entra como
+    `carlos@olympusgym.test` / `Demo1234!` (tiene una reserva de ejemplo ya pasada en el seed) y
+    mira `/cuenta` y `/cuenta/reservas`.
+- Tests:
+  - `mvn test`: BUILD SUCCESS, **61/61 en verde** (9 nuevos: 5 en `BookingServiceTest`, 3 en
+    `MyBookingsHistoryHttpTest`, 1 en `PublicScheduleHttpTest`).
+  - `npm run typecheck` y `npm run build`: sin errores, 16 páginas (sin rutas nuevas).
+  - `npx playwright test`: 6/6 en verde (con `docker-compose.e2e.yml`/`fake-llm`), repetido tres
+    veces sin fallos intermitentes; confirma que el cambio no rompió ningún flujo existente de
+    reservar/cancelar.
+
+---
+
 ### Trozo 6b - Asistente de reservas con IA: chat en el frontend (2026-10-09)
 - Hecho:
   - Botón "Reservar con IA" en `/horario` (visible para socios y visitantes sin sesión —
