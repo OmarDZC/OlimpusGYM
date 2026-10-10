@@ -13,6 +13,77 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 7b (commit 1) - Datos en directo y mensajes en el panel (2026-10-10)
+- Hecho:
+  - `GET /public/live` (nuevo, sin sesión, paquete `booking`): solo datos calculados de verdad
+    desde la base de datos — clases de hoy que quedan por empezar, la más próxima de todas (con
+    sus plazas libres) y cuántas de esas clases tienen plazas libres ahora mismo. Nada de "gente
+    entrenando ahora" ni aforo del gimnasio: no hay control de acceso, así que no hay forma real
+    de calcularlo (LOGIC.md §9). Reutiliza `ScheduleService.listSchedule` (ya usado por
+    `/public/schedule`, que nunca devuelve sesiones ya empezadas) en vez de duplicar la consulta.
+    "Hoy" se calcula con `Europe/Madrid` de verdad (`ZonedDateTime`), no con medianoche UTC: a
+    las 23:00 UTC ya puede ser la 1 de la madrugada del día siguiente en Madrid. Caché corta con
+    la cabecera `Cache-Control: max-age=10, public` (sin infraestructura nueva: el propio
+    frontend ya se refresca solo cada 30-60 s, la cabecera solo evita peticiones repetidas si
+    hay varias pestañas abiertas a la vez).
+  - Franja "En directo" en la portada (`components/public/LiveStrip.tsx`, isla `"use client"`
+    dentro de la portada que por lo demás sigue siendo un Server Component): indicador de pulso
+    (`motion-safe:animate-ping`, así que con `prefers-reduced-motion` activo se queda en un punto
+    fijo sin animar, sin esperar al Commit 2 para eso) y texto llano con los datos reales. Se
+    actualiza sola cada 45 s y dibuja un "en pausa" según `document.visibilitychange`: dejar de
+    pedir datos mientras la pestaña no está visible, y pedirlos de inmediato al volver a ella.
+    Un fallo de red cambia el texto por un aviso discreto ("No se pudo cargar el estado en
+    directo ahora mismo") sin tocar el resto de la portada.
+  - Migración `V7`: `contact_messages` gana `read_at` (NULL = sin leer).
+  - Pantalla nueva "Mensajes" en `/admin/mensajes` (OWNER y STAFF, como el resto del panel; un
+    socio recibe 403 — la guarda de `/admin` en el cliente además ni le deja llegar a pedirlo):
+    `GET /admin/messages` (más recientes primero) y `PATCH /admin/messages/{id}/read`
+    (`AdminMessageController`/`AdminMessageService`, mismo patrón que `AdminMemberController`/
+    `AdminMemberService`). Enlazada desde `AdminNav` con el mismo estilo que Resumen/Clases/
+    Socios/Reservas.
+  - Tests backend nuevos (Testcontainers): `PublicLiveHttpTest` (sin clases, clases ya
+    empezadas, una clase completa que cuenta como "queda hoy" pero no como "con plazas libres",
+    y el límite de hoy/mañana en `Europe/Madrid` con un caso construido a propósito: una sesión a
+    las 23:00 UTC del día 8 ya es "mañana" en Madrid aunque siga siendo el mismo día en UTC) y
+    `AdminMessageHttpTest` (dueño y staff ven los mensajes, un socio recibe 403, marcar como
+    leído persiste).
+  - Tests end-to-end nuevos (`live-and-messages.spec.ts`): la franja "En directo" de la portada
+    muestra los mismos datos que devuelve `GET /public/live` de verdad; un mensaje enviado desde
+    `/contacto` aparece en `/admin/mensajes` cuando entra el dueño, y un socio autenticado no
+    puede pedir esa lista (403 directo a la API, sin pasar por la guarda del cliente).
+  - Verificado en vivo contra Docker real: la franja "En directo" de la portada con datos reales
+    (clases de hoy, próxima clase, plazas libres); `/admin/mensajes` con el dueño viendo los
+    mensajes de pruebas anteriores y marcando uno como leído (el aviso "Sin leer" y el botón
+    desaparecen al momento). Probado en escritorio y en móvil (375px): la franja se ajusta bien
+    en una pantalla estrecha y la lista de mensajes no se rompe.
+- Decisiones / simplificaciones:
+  - Caché con una cabecera HTTP (`Cache-Control`), no con Caffeine/Redis: no había ninguna
+    librería de caché en el proyecto y añadir una solo para "unos segundos" de una franja que ya
+    se refresca sola en el cliente sería una capa de más para lo que hace falta aquí.
+  - 45 s de refresco en el cliente: dentro de los 30-60 s que pide `LOGIC.md` §9, elegido el
+    punto medio.
+  - El indicador de pulso usa `motion-safe:` de Tailwind en vez de CSS a mano para
+    `prefers-reduced-motion`: es el mismo mecanismo que se usará para el resto del movimiento del
+    Commit 2, así que ya queda sentado el patrón.
+- Pendiente: nada de este commit. El resto del movimiento de `DESIGN.md` §6 (titular del hero,
+  scroll, tarjetas, contadores) y las fotos van en el Commit 2 de este mismo trozo.
+- Cómo probarlo:
+  - Backend: `cd backend && mvn test`.
+  - Frontend: `cd frontend && npm run typecheck && npm run build`.
+  - E2E: `docker compose up -d --build backend frontend`, luego `cd e2e && npx playwright test`.
+  - De verdad: `docker compose up -d --build backend frontend`, abre `/` y mira la franja "En
+    directo"; entra como `javier@olympusgym.test` / `Demo1234!` y abre `/admin/mensajes`.
+- Tests:
+  - `mvn test`: BUILD SUCCESS, **92/92 en verde** (10 nuevos: 5 en `PublicLiveHttpTest`, 5 en
+    `AdminMessageHttpTest`).
+  - `npm run typecheck` y `npm run build`: sin errores.
+  - `npx playwright test`: **23/23 en verde** (2 nuevos en `live-and-messages.spec.ts`),
+    confirmado con el backend recién arrancado (en caliente, el bloque de contacto puede agotar
+    su propio límite de envíos si se repite dentro de los 10 minutos — misma nota que el Trozo
+    7a, no afecta a CI).
+
+---
+
 ### Trozo 7a - Web pública: páginas y contenido (2026-10-09)
 - Hecho:
   - Backend: dos endpoints públicos nuevos, ya documentados en `LOGIC.md` §6 pero sin construir

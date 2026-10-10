@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Footer } from "@/components/layout/Footer";
+import { LiveStrip } from "@/components/public/LiveStrip";
 import { fetchPublicPlans, fetchTodaySchedule, type PublicPlan } from "@/lib/api-server";
 import type { ScheduleSession } from "@/lib/api";
 
@@ -62,6 +63,10 @@ export default async function HomePage() {
           <Button href="/tarifas" variant="secondary">
             Ver tarifas
           </Button>
+        </div>
+
+        <div className="w-full max-w-xl">
+          <LiveStrip />
         </div>
       </section>
 

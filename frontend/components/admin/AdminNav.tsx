@@ -12,6 +12,7 @@ const ITEMS = [
   { href: "/admin/clases", label: "Clases" },
   { href: "/admin/socios", label: "Socios" },
   { href: "/admin/reservas", label: "Reservas" },
+  { href: "/admin/mensajes", label: "Mensajes" },
 ];
 
 function initials(fullName: string): string {
@@ -25,8 +26,8 @@ function initials(fullName: string): string {
 
 /**
  * Navegación superior del panel de gestión (DESIGN.md §8: sin barra lateral, rol visible
- * bajo el avatar). Dueño y staff ven los mismos 4 apartados (LOGIC.md §2 les da acceso a
- * los cuatro); lo que cambia por rol es el contenido dentro de cada uno (ingresos y cambio
+ * bajo el avatar). Dueño y staff ven los mismos apartados (LOGIC.md §2 les da acceso a
+ * todos); lo que cambia por rol es el contenido dentro de cada uno (ingresos y cambio
  * de tarifa son solo para el dueño), no la lista de pestañas.
  */
 export function AdminNav() {

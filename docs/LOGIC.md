@@ -55,7 +55,7 @@ Ya existen `tenants` y `users` (V1: rol `OWNER|STAFF|MEMBER`). Añadir:
   - Índice único parcial: un usuario solo puede tener **una** reserva activa (`BOOKED|WAITLIST`) por sesión.
 - `workout_plans`(id, tenant_id, user_id, week_start, goal, level, days_per_week, plan_json, source `AI|MANUAL`, created_at)
 - `workout_logs`(id, tenant_id, user_id, workout_plan_id, day_index, exercise_index, set_index, done bool, weight_kg, reps, logged_at)
-- (opcional) `contact_messages`(id, tenant_id, name, email, message, created_at) para la página de contacto.
+- `contact_messages`(id, tenant_id, name, email, message, created_at, read_at NULL=sin leer) para la página de contacto (Trozo 7a/7b).
 
 Fechas en UTC en BD; la interfaz muestra la zona `Europe/Madrid`.
 
@@ -94,6 +94,7 @@ Gestión (`OWNER`, `STAFF`):
 - `GET /admin/summary` socios activos, ocupación de hoy, clases de hoy, socios que conviene contactar (sin venir hace X días o varias cancelaciones), ingresos del mes **calculados desde membresías activas** (sin pasarela)
 - `GET|POST|PATCH /admin/sessions`, `POST /admin/sessions/{id}/cancel`, repetición semanal (crear N semanas)
 - `GET /admin/members`, `GET /admin/members/{id}`, `GET /admin/bookings`
+- `GET /admin/messages`, `PATCH /admin/messages/{id}/read` (mensajes del formulario de contacto, más recientes primero; Trozo 7b)
 - Solo `OWNER`: `PATCH /admin/members/{id}/plan`, `GET|POST /admin/staff`
 
 ## 7. Servicio de IA (FastAPI)

@@ -30,6 +30,10 @@ public class ContactMessage {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** NULL = todavía sin leer en el panel de gestión (Trozo 7b, LOGIC.md §6). */
+    @Column(name = "read_at")
+    private Instant readAt;
+
     protected ContactMessage() {
     }
 
@@ -40,6 +44,10 @@ public class ContactMessage {
         this.email = email;
         this.message = message;
         this.createdAt = createdAt;
+    }
+
+    public void markRead(Instant now) {
+        this.readAt = now;
     }
 
     public UUID getId() {
@@ -64,5 +72,9 @@ public class ContactMessage {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getReadAt() {
+        return readAt;
     }
 }

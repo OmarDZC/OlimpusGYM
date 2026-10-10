@@ -3,6 +3,7 @@ package com.gymflow.booking;
 import com.gymflow.auth.User;
 import com.gymflow.auth.UserRepository;
 import com.gymflow.booking.dto.MyBookingResponse;
+import com.gymflow.booking.dto.PublicLiveStatusDto;
 import com.gymflow.booking.dto.SessionSummary;
 import java.time.Clock;
 import java.time.Instant;
@@ -57,6 +58,19 @@ public class ScheduleService {
                             session.getStatus().name());
                 })
                 .toList();
+    }
+
+    /**
+     * Franja "En directo" de la portada (Trozo 7b, LOGIC.md §9): clases de hoy que quedan por
+     * empezar ({@code from} = ahora, {@code to} = medianoche de hoy en la zona que decida quien
+     * llama), la más próxima de todas y cuántas tienen plazas libres ahora mismo.
+     */
+    @Transactional(readOnly = true)
+    public PublicLiveStatusDto liveStatus(UUID tenantId, Instant from, Instant to) {
+        List<SessionSummary> remainingToday = listSchedule(tenantId, from, to, null, null, null);
+        SessionSummary next = remainingToday.isEmpty() ? null : remainingToday.get(0);
+        long withFreeSlots = remainingToday.stream().filter(s -> s.freeSlots() > 0).count();
+        return new PublicLiveStatusDto(remainingToday.size(), next, (int) withFreeSlots);
     }
 
     /** Reservas activas (BOOKED/WAITLIST) de clases que todavía no han empezado, la más próxima primero. */

@@ -99,6 +99,18 @@ export type ScheduleSession = {
   status: SessionStatus;
 };
 
+export type PublicLiveStatus = {
+  classesRemainingToday: number;
+  nextClass: ScheduleSession | null;
+  classesWithFreeSlotsNow: number;
+};
+
+export async function fetchPublicLive(): Promise<PublicLiveStatus> {
+  const response = await fetch(`${API_URL}/api/v1/public/live`);
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
 export type BookingStatus = "BOOKED" | "WAITLIST" | "CANCELLED" | "ATTENDED" | "NO_SHOW";
 
 export type MyBooking = {
@@ -421,6 +433,32 @@ export async function cancelAdminBooking(token: string, bookingId: string): Prom
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) await throwProblem(response);
+}
+
+export type AdminContactMessage = {
+  id: string;
+  name: string;
+  email: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
+};
+
+export async function fetchAdminMessages(token: string): Promise<AdminContactMessage[]> {
+  const response = await fetch(`${API_URL}/api/v1/admin/messages`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function markAdminMessageRead(token: string, messageId: string): Promise<AdminContactMessage> {
+  const response = await fetch(`${API_URL}/api/v1/admin/messages/${messageId}/read`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
 }
 
 // ---- Entrenador con IA (Trozo 5) ----
