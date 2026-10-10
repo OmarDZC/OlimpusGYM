@@ -1,10 +1,19 @@
+import logging
+
 from fastapi.testclient import TestClient
 
 from app.assistant import _format_datetime_es
 from app.gymflow_client import get_gymflow_client
 from app.llm import get_client
 from app.main import app
-from tests.fakes import FailingOpenAIClient, FakeGymflowClient, ScriptedToolCallingClient, text, tool_call
+from tests.fakes import (
+    FailingOpenAIClient,
+    FailingOpenAIClientWithStatus,
+    FakeGymflowClient,
+    ScriptedToolCallingClient,
+    text,
+    tool_call,
+)
 
 client = TestClient(app)
 
@@ -216,3 +225,20 @@ def test_llm_inalcanzable_da_503():
         json={"messages": [{"role": "user", "content": "hola"}], "member_token": MEMBER_TOKEN},
     )
     assert r.status_code == 503
+
+
+def test_fallo_del_proveedor_queda_registrado_sin_la_clave(caplog):
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    _override(llm=FailingOpenAIClientWithStatus(status_code=401, message="Invalid API Key"), gymflow=gymflow)
+
+    with caplog.at_level(logging.ERROR, logger="app.main"):
+        r = client.post(
+            "/v1/assistant/chat",
+            json={"messages": [{"role": "user", "content": "hola"}], "member_token": MEMBER_TOKEN},
+        )
+
+    assert r.status_code == 503
+    assert "_FakeProviderStatusError" in caplog.text
+    assert "401" in caplog.text
+    assert "Bearer" not in caplog.text
+    assert "sk-totally-fake-secret-value" not in caplog.text

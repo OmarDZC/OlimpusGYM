@@ -1,10 +1,11 @@
 import json
+import logging
 
 from fastapi.testclient import TestClient
 
 from app.llm import get_client
 from app.main import app
-from tests.fakes import FailingOpenAIClient, FakeOpenAIClient
+from tests.fakes import FailingOpenAIClient, FailingOpenAIClientWithStatus, FakeOpenAIClient
 
 client = TestClient(app)
 
@@ -106,3 +107,16 @@ def test_plan_503_when_llm_unreachable():
 
     assert r.status_code == 503
     assert "no está disponible" in r.json()["detail"]
+
+
+def test_provider_failure_is_logged_without_the_key(caplog):
+    _override(FailingOpenAIClientWithStatus(status_code=401, message="Invalid API Key"))
+
+    with caplog.at_level(logging.ERROR, logger="app.main"):
+        r = client.post("/v1/trainer/plan", json=REQUEST)
+
+    assert r.status_code == 503
+    assert "_FakeProviderStatusError" in caplog.text
+    assert "401" in caplog.text
+    assert "Bearer" not in caplog.text
+    assert "sk-totally-fake-secret-value" not in caplog.text

@@ -64,6 +64,39 @@ class FailingOpenAIClient:
         self.chat = FailingOpenAIClient._Chat()
 
 
+class _FakeProviderStatusError(Exception):
+    """Imita una excepción del SDK de OpenAI con `status_code` (p. ej. 401 de una clave
+    inválida), incluida una petición con cabecera de autorización colgando del propio error,
+    igual que hace el SDK de verdad: así el test de logging comprueba que de verdad no se
+    vuelca a los logs, no solo que no había nada que filtrar."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.request = type(
+            "FakeRequest", (), {"headers": {"Authorization": "Bearer sk-totally-fake-secret-value"}}
+        )()
+
+
+class FailingOpenAIClientWithStatus:
+    """Simula un fallo del proveedor con código HTTP conocido (p. ej. 401 de una clave inválida)."""
+
+    class _Completions:
+        def __init__(self, status_code: int, message: str) -> None:
+            self._status_code = status_code
+            self._message = message
+
+        def create(self, **_kwargs):
+            raise _FakeProviderStatusError(self._message, self._status_code)
+
+    class _Chat:
+        def __init__(self, status_code: int, message: str) -> None:
+            self.completions = FailingOpenAIClientWithStatus._Completions(status_code, message)
+
+    def __init__(self, status_code: int = 401, message: str = "Invalid API Key") -> None:
+        self.chat = FailingOpenAIClientWithStatus._Chat(status_code, message)
+
+
 # ---- Tool calling con guion, para el asistente (Trozo 6) ----
 
 

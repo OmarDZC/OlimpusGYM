@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import Depends, FastAPI, HTTPException
 from openai import OpenAI
 
@@ -10,7 +12,26 @@ from app.schemas import AssistantChatRequest, AssistantChatResponse, PlanRequest
 from app.trainer import LlmInvalidOutputError, LlmUnavailableError
 from app.trainer import generate_plan as run_trainer
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="GymFlow AI Service", version="0.1.0")
+
+
+def _log_provider_failure(source: str, exc: Exception) -> None:
+    """Deja rastro de un fallo del proveedor de LLM antes de convertirlo en 503: sin esto, en
+    los logs solo se veía el 503 final, sin ninguna pista de si era la clave, el modelo, la red
+    o un límite de peticiones (Trozo 7b/9c). Solo el tipo de error y, si el proveedor lo dio, su
+    código HTTP: nunca la clave ni las cabeceras de autorización, que `str(exc)`/el traceback de
+    las excepciones del SDK de OpenAI no incluyen (vienen del cuerpo de la respuesta, no de la
+    petición)."""
+    cause = exc.__cause__ or exc
+    status_code = getattr(cause, "status_code", None)
+    logger.exception(
+        "Fallo del proveedor de LLM en %s: tipo=%s status_code=%s",
+        source,
+        type(cause).__name__,
+        status_code,
+    )
 
 
 @app.get("/health")
@@ -27,7 +48,8 @@ def health() -> dict[str, object]:
 def trainer_plan(request: PlanRequest, client: OpenAI = Depends(get_client)) -> WeeklyPlan:
     try:
         return run_trainer(client, request)
-    except LlmUnavailableError:
+    except LlmUnavailableError as exc:
+        _log_provider_failure("el entrenador", exc)
         raise HTTPException(
             status_code=503,
             detail="El entrenador con IA no está disponible ahora mismo. Inténtalo de nuevo en unos minutos.",
@@ -47,7 +69,8 @@ def assistant_chat(
 ) -> AssistantChatResponse:
     try:
         return run_assistant_chat(client, gymflow, request)
-    except AssistantUnavailableError:
+    except AssistantUnavailableError as exc:
+        _log_provider_failure("el asistente", exc)
         raise HTTPException(
             status_code=503,
             detail="El asistente con IA no está disponible ahora mismo. Inténtalo de nuevo en unos minutos.",
