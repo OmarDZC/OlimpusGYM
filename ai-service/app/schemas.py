@@ -61,6 +61,20 @@ class PendingActionType(str, Enum):
     CANCEL = "cancel"
 
 
+class ScheduleOption(BaseModel):
+    """Una clase o reserva real, construida por el servidor a partir de los datos que
+    devolvió la herramienta (nunca escrita por el modelo): lo que necesita el frontend para
+    pintar una tarjeta sin tener que fiarse de texto libre."""
+
+    id: str
+    name: str | None = None
+    discipline: str | None = None
+    starts_at: str | None = None
+    room: str | None = None
+    coach_name: str | None = None
+    free_slots: int | None = None
+
+
 class PendingAction(BaseModel):
     """Propuesta de reservar o cancelar, pendiente de que el socio la confirme aparte."""
 
@@ -68,6 +82,7 @@ class PendingAction(BaseModel):
     session_id: str | None = None
     booking_id: str | None = None
     summary: str
+    option: ScheduleOption | None = None
 
 
 class AssistantChatRequest(BaseModel):
@@ -82,3 +97,4 @@ class AssistantChatRequest(BaseModel):
 class AssistantChatResponse(BaseModel):
     reply: str
     pending_action: PendingAction | None = None
+    options: list[ScheduleOption] | None = None

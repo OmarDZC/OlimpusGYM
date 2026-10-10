@@ -9,5 +9,6 @@ public record PendingActionDto(
     @NotBlank @Pattern(regexp = "book|cancel", message = "Tipo de acción no válido") String type,
     UUID sessionId,
     UUID bookingId,
-    String summary) {
+    String summary,
+    ScheduleOptionDto option) {
 }

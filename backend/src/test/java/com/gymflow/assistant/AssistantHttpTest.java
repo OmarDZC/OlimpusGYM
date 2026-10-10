@@ -131,7 +131,7 @@ class AssistantHttpTest {
         createMemberWithMembership("con.asistente@test.local", planWithAssistant);
         String token = loginAndGetToken("con.asistente@test.local");
         Mockito.when(assistantClient.chat(Mockito.eq(token), Mockito.any()))
-            .thenReturn(new AssistantChatResponse("Hay tres clases de Yoga esta semana.", null));
+            .thenReturn(new AssistantChatResponse("Hay tres clases de Yoga esta semana.", null, null));
 
         mvc.perform(post("/api/v1/me/assistant/chat").header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON).content(chatBody("¿Qué clases de yoga hay?")))
@@ -191,9 +191,9 @@ class AssistantHttpTest {
         createMemberWithMembership("confirma.accion@test.local", planWithAssistant);
         String token = loginAndGetToken("confirma.accion@test.local");
         Mockito.when(assistantClient.chat(Mockito.eq(token), Mockito.any()))
-            .thenReturn(new AssistantChatResponse("¡Reserva confirmada!", null));
+            .thenReturn(new AssistantChatResponse("¡Reserva confirmada!", null, null));
 
-        var confirm = new PendingActionDto("book", java.util.UUID.randomUUID(), null, "Reservar Yoga el martes");
+        var confirm = new PendingActionDto("book", java.util.UUID.randomUUID(), null, "Reservar Yoga el martes", null);
         String body = objectMapper.writeValueAsString(Map.of("messages", List.of(), "confirmAction", confirm));
 
         mvc.perform(post("/api/v1/me/assistant/chat").header("Authorization", "Bearer " + token)

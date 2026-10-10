@@ -1,4 +1,6 @@
 package com.gymflow.assistant.dto;
 
-public record AssistantChatResponse(String reply, PendingActionDto pendingAction) {
+import java.util.List;
+
+public record AssistantChatResponse(String reply, PendingActionDto pendingAction, List<ScheduleOptionDto> options) {
 }

@@ -1,8 +1,9 @@
 import logging
+from datetime import datetime
 
 from fastapi.testclient import TestClient
 
-from app.assistant import _format_datetime_es
+from app.assistant import MADRID, _format_datetime_es, _query_schedule
 from app.gymflow_client import get_gymflow_client
 from app.llm import get_client
 from app.main import app
@@ -11,6 +12,9 @@ from tests.fakes import (
     FailingOpenAIClientWithStatus,
     FakeGymflowClient,
     ScriptedToolCallingClient,
+    fail,
+    make_connection_error,
+    make_status_error,
     text,
     tool_call,
 )
@@ -242,3 +246,207 @@ def test_fallo_del_proveedor_queda_registrado_sin_la_clave(caplog):
     assert "401" in caplog.text
     assert "Bearer" not in caplog.text
     assert "sk-totally-fake-secret-value" not in caplog.text
+
+
+# ---- Filtros de listar_clases en el servidor (Trozo 9c) ----
+
+
+def test_listar_clases_sin_fechas_consulta_solo_hoy_y_mañana(monkeypatch):
+    frozen_now = datetime(2026, 10, 13, 9, 0, tzinfo=MADRID)  # martes
+    monkeypatch.setattr("app.assistant._now", lambda: frozen_now)
+
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([tool_call("listar_clases"), text("Aquí tienes el horario.")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "¿Qué clases hay?"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    # Madrid está en CEST (UTC+2) a mediados de octubre: medianoche del 13 son las 22:00 UTC del 12.
+    assert gymflow.last_schedule_call == {
+        "discipline": None,
+        "date_from": "2026-10-12T22:00:00Z",
+        "date_to": "2026-10-14T21:59:59Z",
+    }
+
+
+def test_listar_clases_con_una_fecha_consulta_solo_ese_dia(monkeypatch):
+    monkeypatch.setattr("app.assistant._now", lambda: datetime(2026, 10, 13, 9, 0, tzinfo=MADRID))
+
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient(
+        [tool_call("listar_clases", date_from="2026-10-20"), text("Aquí tienes el horario del viernes.")]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "¿Y el viernes?"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    assert gymflow.last_schedule_call == {
+        "discipline": None,
+        "date_from": "2026-10-19T22:00:00Z",
+        "date_to": "2026-10-20T21:59:59Z",
+    }
+
+
+def test_query_schedule_filtra_por_franja_horaria_y_ordena_por_hora():
+    morning = {**SESSION, "id": "sess-manana", "startsAt": "2026-10-13T08:00:00Z"}  # 10:00 Madrid
+    afternoon = {**SESSION, "id": "sess-tarde", "startsAt": "2026-10-13T16:00:00Z"}  # 18:00 Madrid
+    gymflow = FakeGymflowClient(sessions=[afternoon, morning])
+
+    result = _query_schedule(gymflow, {"time_from": "15:00", "time_to": "20:00"})
+
+    assert [s["id"] for s in result] == ["sess-tarde"]
+
+
+def test_listar_clases_topa_en_8_resultados_mas_proximos():
+    sessions = [
+        {**SESSION, "id": f"sess-{i}", "startsAt": f"2026-10-13T{8 + i:02d}:00:00Z"} for i in range(12)
+    ]
+    gymflow = FakeGymflowClient(sessions=sessions)
+    llm = ScriptedToolCallingClient([tool_call("listar_clases"), text("Aquí tienes las próximas.")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "¿Qué clases hay?"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    options = r.json()["options"]
+    assert len(options) == 8
+    assert [o["id"] for o in options] == [f"sess-{i}" for i in range(8)]  # las 8 más próximas, en orden
+
+
+def test_options_estructuradas_con_datos_reales_cuando_hay_varias_candidatas():
+    other = {**SESSION, "id": "sess-2", "name": "Yoga", "startsAt": "2026-10-13T18:00:00Z"}
+    gymflow = FakeGymflowClient(sessions=[SESSION, other])
+    llm = ScriptedToolCallingClient([tool_call("listar_clases"), text("Hay dos clases disponibles.")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "¿Qué clases hay?"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    options = r.json()["options"]
+    assert options is not None and len(options) == 2
+    assert {o["id"] for o in options} == {"sess-1", "sess-2"}
+    # Los campos son los reales de la sesión, no texto inventado por el modelo.
+    assert options[0]["room"] == SESSION["room"]
+    assert options[0]["free_slots"] == SESSION["freeSlots"]
+
+
+def test_la_propuesta_de_reservar_lleva_los_mismos_campos_reales():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient(
+        [tool_call("listar_clases"), tool_call("reservar_clase", session_id="sess-1"), text("¿Confirmas?")]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Resérvame spinning"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    option = r.json()["pending_action"]["option"]
+    assert option["id"] == "sess-1"
+    assert option["name"] == SESSION["name"]
+    assert option["room"] == SESSION["room"]
+    assert option["free_slots"] == SESSION["freeSlots"]
+
+
+# ---- Limpieza de markdown y emojis en la respuesta (Trozo 9c) ----
+
+
+def test_la_respuesta_nunca_lleva_markdown_ni_emojis():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient(
+        [text("**Spinning** 😉\n- martes 17:00\n- jueves 18:00\n# Elige una")]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "¿Qué hay?"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    reply = r.json()["reply"]
+    for forbidden in ("**", "😉", "- martes", "# Elige"):
+        assert forbidden not in reply
+    assert "Spinning" in reply
+
+
+# ---- Reintento ante 429/5xx/red, nunca ante 401/400 (Trozo 9c) ----
+
+
+def test_reintenta_ante_429_y_acaba_respondiendo(monkeypatch):
+    monkeypatch.setattr("app.assistant.time_module.sleep", lambda _seconds: None)
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([fail(make_status_error(429, retry_after="1")), text("Ya estoy aquí.")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "hola"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    assert r.json()["reply"] == "Ya estoy aquí."
+    assert llm.calls == 2
+
+
+def test_reintenta_ante_un_5xx_del_proveedor(monkeypatch):
+    monkeypatch.setattr("app.assistant.time_module.sleep", lambda _seconds: None)
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([fail(make_status_error(500)), text("Ya estoy aquí.")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "hola"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    assert llm.calls == 2
+
+
+def test_reintenta_ante_un_fallo_de_red(monkeypatch):
+    monkeypatch.setattr("app.assistant.time_module.sleep", lambda _seconds: None)
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([fail(make_connection_error()), text("Ya estoy aquí.")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "hola"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    assert llm.calls == 2
+
+
+def test_no_reintenta_ante_401():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([fail(make_status_error(401)), text("no debería llegar aquí")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "hola"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 503
+    assert llm.calls == 1
+
+
+def test_no_reintenta_ante_400():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([fail(make_status_error(400)), text("no debería llegar aquí")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "hola"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 503
+    assert llm.calls == 1

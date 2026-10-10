@@ -4,7 +4,9 @@ import com.gymflow.assistant.dto.AssistantChatRequest;
 import com.gymflow.assistant.dto.AssistantChatResponse;
 import com.gymflow.assistant.dto.ChatMessageDto;
 import com.gymflow.assistant.dto.PendingActionDto;
+import com.gymflow.assistant.dto.ScheduleOptionDto;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
@@ -65,14 +67,32 @@ public class AssistantClient {
                 action.type(),
                 action.sessionId() != null ? action.sessionId().toString() : null,
                 action.bookingId() != null ? action.bookingId().toString() : null,
-                action.summary());
+                action.summary(),
+                toAiOption(action.option()));
+    }
+
+    private AiScheduleOption toAiOption(ScheduleOptionDto option) {
+        if (option == null) {
+            return null;
+        }
+        return new AiScheduleOption(
+                option.id() != null ? option.id().toString() : null,
+                option.name(),
+                option.discipline(),
+                option.startsAt() != null ? option.startsAt().toString() : null,
+                option.room(),
+                option.coachName(),
+                option.freeSlots());
     }
 
     private AssistantChatResponse toResponse(AiAssistantChatResponse response) {
         if (response == null) {
             throw new AssistantFailedException();
         }
-        return new AssistantChatResponse(response.reply(), toDto(response.pendingAction()));
+        List<ScheduleOptionDto> options = response.options() == null
+                ? null
+                : response.options().stream().map(this::toOptionDto).toList();
+        return new AssistantChatResponse(response.reply(), toDto(response.pendingAction()), options);
     }
 
     private PendingActionDto toDto(AiPendingAction action) {
@@ -83,6 +103,21 @@ public class AssistantClient {
                 action.type(),
                 action.sessionId() != null ? UUID.fromString(action.sessionId()) : null,
                 action.bookingId() != null ? UUID.fromString(action.bookingId()) : null,
-                action.summary());
+                action.summary(),
+                toOptionDto(action.option()));
+    }
+
+    private ScheduleOptionDto toOptionDto(AiScheduleOption option) {
+        if (option == null) {
+            return null;
+        }
+        return new ScheduleOptionDto(
+                option.id() != null ? UUID.fromString(option.id()) : null,
+                option.name(),
+                option.discipline(),
+                option.startsAt() != null ? Instant.parse(option.startsAt()) : null,
+                option.room(),
+                option.coachName(),
+                option.freeSlots());
     }
 }

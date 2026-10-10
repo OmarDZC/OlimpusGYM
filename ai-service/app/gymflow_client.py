@@ -39,8 +39,19 @@ class GymflowClient:
     def __init__(self, base_url: str) -> None:
         self._http = httpx.Client(base_url=base_url, timeout=TIMEOUT)
 
-    def list_schedule(self, discipline: str | None = None) -> list[dict]:
-        params = {"discipline": discipline} if discipline else {}
+    def list_schedule(
+        self,
+        discipline: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> list[dict]:
+        params = {}
+        if discipline:
+            params["discipline"] = discipline
+        if date_from:
+            params["from"] = date_from
+        if date_to:
+            params["to"] = date_to
         response = self._request("GET", "/api/v1/public/schedule", params=params)
         return response.json()
 

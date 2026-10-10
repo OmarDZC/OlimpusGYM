@@ -7,5 +7,6 @@ public record AiPendingAction(
     String type,
     @JsonProperty("session_id") String sessionId,
     @JsonProperty("booking_id") String bookingId,
-    String summary) {
+    String summary,
+    AiScheduleOption option) {
 }

@@ -7,6 +7,9 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 
+import httpx
+from openai import APIConnectionError, APIStatusError
+
 
 class _FakeMessage:
     def __init__(self, content: str) -> None:
@@ -129,6 +132,28 @@ def tool_call(name: str, **arguments) -> tuple[str, list[tuple[str, dict]]]:
     return ("tool_calls", [(name, arguments)])
 
 
+def fail(exc: Exception) -> tuple[str, Exception]:
+    """Un paso del guion en el que el proveedor falla (para probar el reintento del asistente)."""
+    return ("fail", exc)
+
+
+def _fake_llm_request() -> httpx.Request:
+    return httpx.Request("POST", "https://fake-llm.test/chat/completions")
+
+
+def make_status_error(status_code: int, message: str = "fallo del proveedor", retry_after: str | None = None):
+    """Imita una excepción real del SDK de OpenAI con un `status_code` HTTP (429, 500...),
+    cabeceras incluidas, para que `_is_retryable`/`_retry_after_seconds` (app/assistant.py) la
+    reconozcan igual que a una de verdad."""
+    headers = {"retry-after": retry_after} if retry_after else {}
+    response = httpx.Response(status_code=status_code, headers=headers, request=_fake_llm_request())
+    return APIStatusError(message, response=response, body=None)
+
+
+def make_connection_error(message: str = "no se pudo conectar con el proveedor de LLM"):
+    return APIConnectionError(message=message, request=_fake_llm_request())
+
+
 class _ScriptedCompletions:
     def __init__(self, outer: "ScriptedToolCallingClient") -> None:
         self._outer = outer
@@ -158,6 +183,8 @@ class ScriptedToolCallingClient:
             raise AssertionError("El guion del LLM falso se quedó corto para este test")
         kind, payload = self._script[self.calls]
         self.calls += 1
+        if kind == "fail":
+            raise payload
         if kind == "text":
             message = _FakeAssistantMessage(content=payload, tool_calls=None)
         else:
@@ -175,8 +202,20 @@ class FakeGymflowClient:
         self.bookings_by_token: dict[str, list[dict]] = bookings_by_token or {}
         self.book_calls: list[tuple[str, str]] = []
         self.cancel_calls: list[tuple[str, str]] = []
+        self.last_schedule_call: dict | None = None
 
-    def list_schedule(self, discipline: str | None = None) -> list[dict]:
+    def list_schedule(
+        self,
+        discipline: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> list[dict]:
+        # El filtrado por fecha de verdad lo hace el backend real (ver PublicScheduleController):
+        # este doble solo registra con qué from/to se le llamó, para que los tests comprueben que
+        # el servicio de IA calcula bien la ventana, sin tener que fijar las fechas de SESSION a
+        # "hoy" (rompería test_format_datetime_es_en_espanol_llano_hora_de_madrid, que depende de
+        # una fecha fija).
+        self.last_schedule_call = {"discipline": discipline, "date_from": date_from, "date_to": date_to}
         if discipline:
             return [s for s in self.sessions if s.get("discipline") == discipline]
         return list(self.sessions)
