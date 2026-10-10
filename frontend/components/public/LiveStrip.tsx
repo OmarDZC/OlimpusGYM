@@ -13,6 +13,34 @@ function formatTime(iso: string): string {
 }
 
 /**
+ * Cuenta hasta el valor real (Trozo 7b, DESIGN.md §6: "contadores que suben"), nunca un número
+ * inventado: solo anima la llegada de una cifra que ya viene de `GET /public/live`. Con
+ * `prefers-reduced-motion` activo, salta directa al valor final.
+ */
+function useCountUp(target: number): number {
+  const [value, setValue] = useState(target);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setValue(target);
+      return;
+    }
+    const start = performance.now();
+    const duration = 600;
+    let raf: number;
+    function tick(now: number) {
+      const progress = Math.min(1, (now - start) / duration);
+      setValue(Math.round(progress * target));
+      if (progress < 1) raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target]);
+
+  return value;
+}
+
+/**
  * Franja "En directo" de la portada (Trozo 7b, LOGIC.md §9): solo datos reales de
  * `GET /public/live`. Se actualiza sola cada 45 s y deja de pedir datos mientras la pestaña no
  * está visible (`document.visibilitychange`), para no gastar peticiones de fondo sin motivo. Un
@@ -22,6 +50,8 @@ export function LiveStrip() {
   const [status, setStatus] = useState<PublicLiveStatus | null>(null);
   const [error, setError] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const classesRemainingToday = useCountUp(status?.classesRemainingToday ?? 0);
+  const classesWithFreeSlotsNow = useCountUp(status?.classesWithFreeSlotsNow ?? 0);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,7 +117,7 @@ export function LiveStrip() {
             "No quedan clases por empezar hoy."
           ) : (
             <>
-              {status.classesRemainingToday} clase{status.classesRemainingToday === 1 ? "" : "s"} por empezar hoy
+              {classesRemainingToday} clase{status.classesRemainingToday === 1 ? "" : "s"} por empezar hoy
               {status.nextClass && (
                 <>
                   {" · Próxima: "}
@@ -96,7 +126,7 @@ export function LiveStrip() {
                 </>
               )}
               {" · "}
-              {status.classesWithFreeSlotsNow} con plazas libres ahora
+              {classesWithFreeSlotsNow} con plazas libres ahora
             </>
           )}
         </p>

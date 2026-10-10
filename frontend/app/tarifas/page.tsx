@@ -3,7 +3,10 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Footer } from "@/components/layout/Footer";
 import { TarifaCta } from "@/components/public/TarifaCta";
+import { Reveal } from "@/components/motion/Reveal";
 import { fetchPublicPlans, type PublicPlan } from "@/lib/api-server";
+
+const cardHover = "transition-transform duration-200 motion-safe:hover:-translate-y-1 hover:border-accent/40";
 
 export const metadata: Metadata = {
   title: "Tarifas | OlympusGYM",
@@ -66,9 +69,9 @@ export default async function TarifasPage() {
 
         {plans.length > 0 && (
           <>
-            <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
+            <Reveal className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
               {plans.map((plan) => (
-                <Card key={plan.planCode} className="flex flex-col">
+                <Card key={plan.planCode} className={`flex flex-col ${cardHover}`}>
                   <p className="font-display text-2xl font-bold uppercase tracking-tight">{plan.planName}</p>
                   <p className="mt-2 font-display text-4xl font-bold text-accent-text tabular-nums">
                     {formatPrice(plan.priceCents)} € <span className="text-base font-sans text-text-muted">/mes</span>
@@ -81,10 +84,10 @@ export default async function TarifasPage() {
                   <TarifaCta className="mt-6 w-full" />
                 </Card>
               ))}
-            </div>
+            </Reveal>
 
             <h2 className="mt-16 font-display text-2xl font-bold uppercase tracking-tight">Comparación</h2>
-            <div className="mt-4 overflow-x-auto rounded-card border border-border">
+            <Reveal className="mt-4 overflow-x-auto rounded-card border border-border">
               <table className="w-full min-w-[480px] border-collapse text-left text-sm">
                 <caption className="sr-only">Comparación de beneficios entre las tres tarifas</caption>
                 <thead>
@@ -152,7 +155,7 @@ export default async function TarifasPage() {
                   </tr>
                 </tbody>
               </table>
-            </div>
+            </Reveal>
           </>
         )}
       </section>

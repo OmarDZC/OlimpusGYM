@@ -15,6 +15,7 @@ export function Logo({ className }: { className?: string }) {
       OLYMPUS
       <svg width="40" height="20" viewBox="0 0 40 20" fill="none" aria-hidden="true" className="shrink-0">
         <path
+          className="logo-pulse-line"
           d="M1 11H8L11 4L16 17L20 7L23 13L26 11H39"
           stroke="var(--color-accent)"
           strokeWidth="2.5"

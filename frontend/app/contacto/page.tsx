@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Footer } from "@/components/layout/Footer";
 import { ContactForm } from "@/components/public/ContactForm";
+import { Reveal } from "@/components/motion/Reveal";
 
 export const metadata: Metadata = {
   title: "Contacto | OlympusGYM",
@@ -25,7 +26,7 @@ export default function ContactoPage() {
           ¿Dudas sobre tarifas, clases o cómo llegar? Escríbenos y te respondemos en cuanto podamos.
         </p>
 
-        <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <Reveal className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-2">
           <Card>
             <h2 className="font-display text-xl font-bold uppercase tracking-tight">Envíanos un mensaje</h2>
             <div className="mt-4">
@@ -34,25 +35,25 @@ export default function ContactoPage() {
           </Card>
 
           <div className="flex flex-col gap-6">
-            <Card>
+            <Card className="transition-transform duration-200 motion-safe:hover:-translate-y-1 hover:border-accent/40">
               <h2 className="font-display text-xl font-bold uppercase tracking-tight">Dónde estamos</h2>
               <p className="mt-2 text-sm text-text-muted">Calle del Hierro 12, 28045 Madrid (dirección de ejemplo)</p>
               <p className="mt-1 text-sm text-text-muted">Metro Hierro, líneas 5 y 10 (parada de ejemplo)</p>
             </Card>
 
-            <Card>
+            <Card className="transition-transform duration-200 motion-safe:hover:-translate-y-1 hover:border-accent/40">
               <h2 className="font-display text-xl font-bold uppercase tracking-tight">Horario</h2>
               <p className="mt-2 text-sm text-text-muted">Sala de pesas: 06:00 a 23:00, todos los días</p>
               <p className="mt-1 text-sm text-text-muted">Clases dirigidas: según el horario de cada disciplina</p>
             </Card>
 
-            <Card>
+            <Card className="transition-transform duration-200 motion-safe:hover:-translate-y-1 hover:border-accent/40">
               <h2 className="font-display text-xl font-bold uppercase tracking-tight">Contacto directo</h2>
               <p className="mt-2 text-sm text-text-muted">hola@olympusgym.test (correo de ejemplo)</p>
               <p className="mt-1 text-sm text-text-muted">+34 900 000 000 (teléfono de ejemplo)</p>
             </Card>
           </div>
-        </div>
+        </Reveal>
       </section>
 
       <Footer />

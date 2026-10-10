@@ -13,6 +13,100 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 7b (commit 2) - Imagen y movimiento (2026-10-10)
+- Hecho:
+  - Tres fotos reales con licencia verificable (Unsplash, comprobadas a mano una a una antes de
+    descargarlas: se descartó una por ser de Unsplash+, de pago, no la Licencia Unsplash
+    gratuita), guardadas en `frontend/public/images/`, optimizadas con `next/image`
+    (`placeholder="blur"`, tamaños responsive con `sizes`) y acreditadas en `docs/CREDITS.md`
+    con autor y enlace: el hero de la portada, la sección nueva "Nuestro hierro" y la sección
+    "Clases de hoy". Todas en blanco y negro con contraste alto (`grayscale contrast-125`,
+    DESIGN.md §4) sin importar el color original. La del hero lleva `alt=""` (decorativa, el
+    titular ya dice lo mismo); las otras dos llevan texto alternativo descriptivo. Degradado
+    oscuro (`bg-gradient-to-t from-bg via-bg/85 to-bg/50`) sobre la foto del hero para que el
+    titular siga legible, comprobado también en tema claro (el degradado usa el token de fondo,
+    así que se aclara solo).
+  - Se instaló `sharp` en el frontend: sin él, el optimizador de imágenes de Next en modo
+    autoalojado (`next start` en Docker) cae a un decodificador más lento; con `sharp` usa el
+    rápido, que es lo que recomienda el propio Next para despliegues fuera de Vercel.
+  - Movimiento de `DESIGN.md` §6, todo con CSS/JS ligero y respetando
+    `prefers-reduced-motion` (ya había una regla global que deja animaciones y transiciones a
+    0,01 ms con esa preferencia; donde hacía falta algo más —que el contenido no dependa de
+    JavaScript para verse— se añadió `motion-safe:` encima):
+    - Línea de pulso del logo (`components/Logo.tsx`): se dibuja sola al cargar
+      (`stroke-dashoffset`). Con reduced-motion, el trazo nunca llega a ocultarse: sale ya
+      dibujado del todo.
+    - Titular del hero que cambia de palabra resaltada (`HeroHeadline.tsx`): OLIMPO / HIERRO /
+      RÉCORD cada 3 s, con una transición corta. Con reduced-motion, el intervalo ni se
+      programa: la palabra se queda fija en la primera.
+    - Aparición al hacer scroll (`components/motion/Reveal.tsx`, nuevo): envuelve cada sección
+      de `/`, `/tarifas` y `/contacto`. Con reduced-motion, ni el estado "oculto" ni la
+      transición llegan a aplicarse (las clases van con `motion-safe:`), así que el contenido
+      sale visible desde el primer render sin depender de si el observador ya disparó.
+    - Efecto al pasar el ratón en tarjetas (tarifas, clases de hoy, testimonios, tarjetas de
+      contacto) y en los iconos de la franja de beneficios: una elevación corta
+      (`-translate-y-1`) con `motion-safe:hover:`.
+    - Contadores que suben (`LiveStrip.tsx`): las dos cifras de la franja "En directo" cuentan
+      hasta su valor real en ~600 ms al cargar, nunca un número inventado — son las mismas
+      cifras reales de `GET /public/live` del commit anterior, solo con una entrada animada. Con
+      reduced-motion saltan directas al valor final.
+  - Sin saltos de diseño: las fotos usan `next/image` con contenedores de tamaño fijo
+    (`aspect-[4/3]`, o `fill` dentro de una sección con alto ya reservado), así que el hueco
+    existe desde el primer render; la aparición al hacer scroll anima opacidad y `translate`,
+    nunca `height` ni `display`.
+  - Tests end-to-end nuevos (`motion-and-images.spec.ts`, con `test.use({ reducedMotion:
+    "reduce" })`): las secciones con aparición al hacer scroll ya se ven sin necesidad de bajar;
+    el titular del hero no cambia de palabra sola pasados los 3 s; las tres fotos tienen el texto
+    alternativo esperado (vacío en la decorativa, descriptivo en las otras dos).
+  - Verificado en vivo contra Docker real, en escritorio y en móvil (375px): portada completa
+    con las tres fotos, el degradado del hero, el titular cambiando de palabra, las secciones
+    apareciendo al hacer scroll y el efecto de elevación en las tarjetas; lo mismo en tema claro
+    (el degradado y el color de la palabra resaltada se adaptan solos, sin lógica condicional).
+    Navegación por teclado comprobada a mano: el foco visible en lima (`:focus-visible` de
+    `DESIGN.md`, ya existente) se ve con claridad sobre la foto del hero y en el resto de la
+    portada. Estructura de encabezados y regiones (`banner`/`navigation`/`main`/`contentinfo`)
+    revisada con el árbol de accesibilidad: jerarquía correcta, un único `h1`.
+- Decisiones / simplificaciones:
+  - **No pude medir con Lighthouse.** Lo intenté por varias vías (CLI de Lighthouse directo,
+    apuntando `CHROME_PATH` al Chromium de Playwright ya instalado en esta máquina, lanzando
+    Chrome a mano con `--remote-debugging-port` desde PowerShell, y `spawn`/`execFile` de Node
+    directos): todas fallan igual, con un error de `spawn` al intentar arrancar el proceso de
+    Chrome, en esta máquina concreta — algo del entorno impide lanzar ese binario como proceso
+    nuevo, no es un problema del propio Lighthouse ni de las rutas. Tampoco sirve la API de
+    PageSpeed Insights como alternativa: necesita una URL pública, y el sitio solo corre en
+    `localhost` en esta máquina. Así que no hay cifras reales de rendimiento, accesibilidad, LCP
+    ni CLS que darte; lo que sí hice fue una revisión manual en su lugar (ver "Hecho" arriba:
+    tamaños de imagen servidos de verdad vistos por red —la del hero ronda los 95 KB ya
+    optimizada a 1200px/calidad 75, las otras dos unos 30 KB cada una a 640px—, estructura de
+    encabezados y regiones, foco de teclado visible, contraste del texto sobre la foto en los dos
+    temas). Si en otra máquina se puede lanzar Chrome de verdad, `npx lighthouse http://localhost:3000/
+    --preset=desktop` (o sin `--preset` para el perfil móvil, que es el que pedía el encargo) daría
+    las cifras que aquí no se pudieron sacar.
+  - Las palabras del titular que cambian (OLIMPO/HIERRO/RÉCORD) son una variación propia sobre
+    el ejemplo de `DESIGN.md` §6 (ENTRENA/RESERVA/PROGRESA): como el titular real de esta web ya
+    es "Forja tu propio ___" (no el genérico de la referencia), tenía más sentido ciclar la
+    palabra que ya resaltaba en lima que sustituir todo el titular.
+  - El efecto de elevación en tarjetas se aplicó caso por caso en las páginas públicas (no en el
+    componente `Card` compartido): así no cambia también el aspecto de las tarjetas de
+    `/cuenta`/`/admin`, que no son parte de "la web viva" que pedía este commit.
+- Pendiente: nada de este trozo. El Trozo 7 (web pública) queda cerrado con sus dos commits; el
+  siguiente del roadmap es el Trozo 8 (producción y portfolio), que no se empieza ahora.
+- Cómo probarlo:
+  - Frontend: `cd frontend && npm run typecheck && npm run build`.
+  - E2E: `docker compose up -d --build backend frontend`, luego `cd e2e && npx playwright test`.
+  - De verdad: `docker compose up -d --build frontend`, abre `/` y mira el hero, "Nuestro
+    hierro" y "Clases de hoy" con sus fotos; baja despacio para ver la aparición de las
+    secciones; activa "reducir movimiento" en el sistema operativo y recarga para comprobar que
+    no queda nada a medio animar.
+- Tests:
+  - `npm run typecheck` y `npm run build`: sin errores.
+  - `npx playwright test`: **26/26 en verde** (3 nuevos en `motion-and-images.spec.ts`),
+    confirmado con el backend recién arrancado.
+  - Sin cambios en backend: no hizo falta repetir `mvn test` (seguía en 92/92 del commit
+    anterior).
+
+---
+
 ### Trozo 7b (commit 1) - Datos en directo y mensajes en el panel (2026-10-10)
 - Hecho:
   - `GET /public/live` (nuevo, sin sesión, paquete `booking`): solo datos calculados de verdad
