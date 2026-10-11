@@ -55,3 +55,15 @@ Cada trozo = backend + frontend de una funcionalidad, con tests, un commit y una
 
 ## Trozo 9b (opcional, junto a Trozo 9) - Cambios de tarifa y avisos de renovación
 - Ver `LOGIC.md` §12 para las reglas. Sin implementar todavía: solo documentado para cuando se retome Pagos.
+
+## Pendiente antes de lanzar
+
+Lista para no perderla de vista, no un trozo numerado: se va tachando/actualizando en `docs/PROGRESS.md` según se haga.
+
+- Sesión de pruebas manual completa (tarifas, contacto, chat de reservas, entrenador, panel de gestión, móvil) y arreglo de lo que salga.
+- Despliegue en VPS (guiado, con `docs/DEPLOY.md`) con dominio o IP, HTTPS, copias programadas y reinicio nocturno de la demo.
+- Medir rendimiento con PageSpeed/Lighthouse sobre la URL pública y corregir lo que baje de 90.
+- Decisión del modelo de IA para la demo pública (gratuito pequeño o plan de pago): la detección de "pregunta de confirmación sin herramienta" es por palabras clave y puede fallar con frases nuevas.
+- README final: arquitectura, decisiones, capturas, vídeo demo de 2 minutos, credenciales de la demo y nota honesta de desarrollo asistido por IA.
+- Limpieza final del historial de git (agrupar por funcionalidad, quitar firmas, copia de seguridad previa) y renombrar el repositorio a OlympusGYM antes de hacerlo público.
+- Opcionales: pantalla "Equipo" para que el dueño dé de alta staff; Stripe en modo test con protección contra dos cambios de tarifa simultáneos; estabilizar el e2e intermitente.
