@@ -55,6 +55,10 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
       LLM_API_KEY: ${LLM_API_KEY:-ollama}
       LLM_MODEL: ${LLM_MODEL:-llama3.1:8b}
+      # Proveedor de respaldo opcional (Trozo 9e): si se dejan vacías, no cambia nada.
+      LLM_FALLBACK_BASE_URL: ${LLM_FALLBACK_BASE_URL:-}
+      LLM_FALLBACK_API_KEY: ${LLM_FALLBACK_API_KEY:-}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-}
       BACKEND_BASE_URL: http://backend:8080
     ports:
       - "8000:8000"

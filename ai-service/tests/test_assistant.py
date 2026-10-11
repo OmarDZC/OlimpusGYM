@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi.testclient import TestClient
 
 from app.assistant import MADRID, _format_datetime_es, _query_schedule
+from app.config import settings
 from app.gymflow_client import get_gymflow_client
 from app.llm import get_client
 from app.main import app
@@ -385,7 +386,7 @@ def test_la_respuesta_nunca_lleva_markdown_ni_emojis():
 
 
 def test_reintenta_ante_429_y_acaba_respondiendo(monkeypatch):
-    monkeypatch.setattr("app.assistant.time_module.sleep", lambda _seconds: None)
+    monkeypatch.setattr("app.llm_retry.time_module.sleep", lambda _seconds: None)
     gymflow = FakeGymflowClient(sessions=[SESSION])
     llm = ScriptedToolCallingClient([fail(make_status_error(429, retry_after="1")), text("Ya estoy aquí.")])
     _override(llm=llm, gymflow=gymflow)
@@ -400,7 +401,7 @@ def test_reintenta_ante_429_y_acaba_respondiendo(monkeypatch):
 
 
 def test_reintenta_ante_un_5xx_del_proveedor(monkeypatch):
-    monkeypatch.setattr("app.assistant.time_module.sleep", lambda _seconds: None)
+    monkeypatch.setattr("app.llm_retry.time_module.sleep", lambda _seconds: None)
     gymflow = FakeGymflowClient(sessions=[SESSION])
     llm = ScriptedToolCallingClient([fail(make_status_error(500)), text("Ya estoy aquí.")])
     _override(llm=llm, gymflow=gymflow)
@@ -414,7 +415,7 @@ def test_reintenta_ante_un_5xx_del_proveedor(monkeypatch):
 
 
 def test_reintenta_ante_un_fallo_de_red(monkeypatch):
-    monkeypatch.setattr("app.assistant.time_module.sleep", lambda _seconds: None)
+    monkeypatch.setattr("app.llm_retry.time_module.sleep", lambda _seconds: None)
     gymflow = FakeGymflowClient(sessions=[SESSION])
     llm = ScriptedToolCallingClient([fail(make_connection_error()), text("Ya estoy aquí.")])
     _override(llm=llm, gymflow=gymflow)
@@ -680,11 +681,11 @@ def test_las_tarjetas_se_incluyen_aunque_solo_haya_una_clase():
     assert body["context_option_ids"] == ["sess-1"]
 
 
-def test_la_respuesta_no_repite_la_hora_cuando_ya_hay_tarjeta():
+def test_una_hora_exacta_que_coincide_con_la_clase_real_se_deja_tal_cual():
+    # Trozo 9e: antes se borraba cualquier hora si había tarjeta (sobrecorrección del Trozo
+    # 9d); ahora se exige la hora exacta y solo se toca si NO coincide con los datos reales.
     gymflow = FakeGymflowClient(sessions=[SESSION])
-    llm = ScriptedToolCallingClient(
-        [tool_call("listar_clases"), text("Hay yoga a las 19:00, ¿quieres que te la reserve?")]
-    )
+    llm = ScriptedToolCallingClient([tool_call("listar_clases"), text("Hay yoga a las 19:00.")])
     _override(llm=llm, gymflow=gymflow)
 
     r = client.post(
@@ -692,7 +693,68 @@ def test_la_respuesta_no_repite_la_hora_cuando_ya_hay_tarjeta():
         json={"messages": [{"role": "user", "content": "¿Hay yoga mañana?"}], "member_token": MEMBER_TOKEN},
     )
     assert r.status_code == 200
-    assert "19:00" not in r.json()["reply"]
+    assert "19:00" in r.json()["reply"]
+
+
+def test_una_hora_inventada_que_no_coincide_con_ninguna_clase_real_se_sustituye():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([tool_call("listar_clases"), text("Hay yoga mañana a mediodía, a las 12:00.")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "¿Hay yoga mañana?"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    reply = r.json()["reply"]
+    assert "12:00" not in reply
+    assert "19:00" in reply  # la hora real de SESSION (17:00 UTC = 19:00 Madrid)
+    assert SESSION["room"] in reply
+
+
+def test_pregunta_de_seguimiento_sin_llamar_a_la_herramienta_recupera_las_tarjetas_del_contexto():
+    # Fallo real: "¿a qué hora?" tras ya haber consultado el horario, contestado desde lo que
+    # el modelo ya sabe sin volver a llamar a listar_clases. Las tarjetas deben reaparecer.
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([text("Es a las 19:00.")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={
+            "messages": [
+                {"role": "user", "content": "¿Hay yoga mañana?"},
+                {"role": "assistant", "content": "Sí, a las 19:00."},
+                {"role": "user", "content": "¿Y dónde es?"},
+            ],
+            "member_token": MEMBER_TOKEN,
+            "context_option_ids": ["sess-1"],
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["options"] is not None and len(body["options"]) == 1
+    assert body["options"][0]["id"] == "sess-1"
+    assert body["context_option_ids"] == ["sess-1"]
+
+
+def test_pregunta_de_seguimiento_con_clase_ya_no_disponible_no_ofrece_su_tarjeta():
+    # La clase del contexto ya no está en el horario (se llenó o se canceló): no se revalida
+    # como si siguiera existiendo.
+    gymflow = FakeGymflowClient(sessions=[])  # sess-1 ya no existe
+    llm = ScriptedToolCallingClient([text("No tengo esa información ahora mismo.")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "¿Y a qué hora?"}],
+            "member_token": MEMBER_TOKEN,
+            "context_option_ids": ["sess-1"],
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["options"] is None
 
 
 def test_responder_si_con_una_sola_tarjeta_propone_sin_hablar_con_el_modelo():
@@ -780,7 +842,7 @@ def test_si_con_mas_de_una_tarjeta_en_contexto_no_activa_el_atajo():
 
 
 def test_429_agotando_reintentos_da_mensaje_de_limite_no_de_caida(monkeypatch):
-    monkeypatch.setattr("app.assistant.time_module.sleep", lambda _seconds: None)
+    monkeypatch.setattr("app.llm_retry.time_module.sleep", lambda _seconds: None)
     gymflow = FakeGymflowClient(sessions=[SESSION])
     llm = ScriptedToolCallingClient(
         [fail(make_status_error(429)), fail(make_status_error(429)), fail(make_status_error(429))]
@@ -809,3 +871,23 @@ def test_500_agotando_reintentos_sigue_dando_el_mensaje_de_caida():
     )
     assert r.status_code == 503
     assert "no está disponible" in r.json()["detail"].lower()
+
+
+def test_con_respaldo_configurado_el_asistente_responde_desde_ahi_tras_agotar_el_principal(monkeypatch):
+    monkeypatch.setattr("app.llm_retry.time_module.sleep", lambda _s: None)
+    monkeypatch.setattr(settings, "llm_fallback_base_url", "http://fallback.test/v1")
+    monkeypatch.setattr(settings, "llm_fallback_model", "modelo-de-respaldo")
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    primary = ScriptedToolCallingClient([fail(make_status_error(429)) for _ in range(3)])
+    fallback = ScriptedToolCallingClient([text("Respondo desde el proveedor de respaldo.")])
+    monkeypatch.setattr("app.llm_retry.fallback_client", lambda: fallback)
+    _override(llm=primary, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "hola"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    assert r.json()["reply"] == "Respondo desde el proveedor de respaldo."
+    assert primary.calls == 3
+    assert fallback.calls == 1

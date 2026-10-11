@@ -2,7 +2,7 @@
 
 import { Check } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MobileAccountNav } from "@/components/account/MobileAccountNav";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -31,6 +31,11 @@ const LEVELS: { value: TrainerLevel; label: string }[] = [
 const FREQUENCIES = [3, 4, 5];
 
 const EQUIPMENT_OPTIONS = ["Gimnasio completo", "Mancuernas y barra", "Peso corporal"];
+
+// Cada rutina le cuesta al proveedor de IA muchos tokens de salida; encadenar generaciones
+// sin esperar agota enseguida su cupo por minuto (visto de verdad: la tercera seguida ya
+// fallaba). Una espera corta entre una rutina y la siguiente evita encadenarlas sin querer.
+const GENERATE_COOLDOWN_SECONDS = 45;
 
 /** Botón de una sola elección (objetivo, nivel, frecuencia): mismo lenguaje visual que los días de /horario. */
 function ChoiceButton({
@@ -72,6 +77,13 @@ export default function EntrenadorIaPage() {
   const [error, setError] = useState<string | null>(null);
   const [planForbidden, setPlanForbidden] = useState(false);
   const [plan, setPlan] = useState<GeneratedWeeklyPlan | null>(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = setInterval(() => setCooldownSeconds((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [cooldownSeconds]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -79,6 +91,7 @@ export default function EntrenadorIaPage() {
       router.push("/acceso");
       return;
     }
+    if (cooldownSeconds > 0) return;
 
     setSubmitting(true);
     setError(null);
@@ -95,6 +108,7 @@ export default function EntrenadorIaPage() {
           .filter(Boolean),
       });
       setPlan(result);
+      setCooldownSeconds(GENERATE_COOLDOWN_SECONDS);
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
         setPlanForbidden(true);
@@ -215,9 +229,18 @@ export default function EntrenadorIaPage() {
               </div>
             )}
 
-            <Button type="submit" variant="primary" disabled={submitting} className="w-full">
-              {submitting ? "Creando tu rutina..." : "Crear mi rutina"}
+            <Button type="submit" variant="primary" disabled={submitting || cooldownSeconds > 0} className="w-full">
+              {submitting
+                ? "Creando tu rutina..."
+                : cooldownSeconds > 0
+                  ? `Espera ${cooldownSeconds} s para generar otra`
+                  : "Crear mi rutina"}
             </Button>
+            {cooldownSeconds > 0 && (
+              <p className="text-center text-xs text-text-muted">
+                Generar una rutina gasta mucha capacidad de la IA: espera un momento antes de pedir otra.
+              </p>
+            )}
           </form>
         </Card>
 

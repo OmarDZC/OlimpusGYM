@@ -9,7 +9,7 @@ from app.config import settings
 from app.gymflow_client import GymflowClient, get_gymflow_client
 from app.llm import get_client
 from app.schemas import AssistantChatRequest, AssistantChatResponse, PlanRequest, WeeklyPlan
-from app.trainer import LlmInvalidOutputError, LlmUnavailableError
+from app.trainer import LlmInvalidOutputError, LlmRateLimitedError, LlmUnavailableError
 from app.trainer import generate_plan as run_trainer
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,15 @@ def health() -> dict[str, object]:
 @app.post("/v1/trainer/plan", response_model=WeeklyPlan)
 def trainer_plan(request: PlanRequest, client: OpenAI = Depends(get_client)) -> WeeklyPlan:
     try:
-        return run_trainer(client, request)
+        return run_trainer(client, settings.llm_model, request)
+    except LlmRateLimitedError as exc:
+        # Subclase de LlmUnavailableError: tiene que comprobarse antes. No es que el
+        # entrenador esté caído, es que se agotó el cupo de peticiones del proveedor por ahora.
+        _log_provider_failure("el entrenador", exc)
+        raise HTTPException(
+            status_code=429,
+            detail="El servicio de IA está saturado, inténtalo de nuevo en un minuto.",
+        )
     except LlmUnavailableError as exc:
         _log_provider_failure("el entrenador", exc)
         raise HTTPException(

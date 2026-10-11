@@ -13,5 +13,12 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "llama3.1:8b"
 
+    # Proveedor de respaldo, opcional (Trozo 9e): si el principal agota sus reintentos con un
+    # 429/5xx, se prueba una vez aquí antes de rendirse (ver app/llm_retry.py). Vacío por
+    # defecto = mismo comportamiento que antes, solo el principal.
+    llm_fallback_base_url: str = ""
+    llm_fallback_api_key: str = ""
+    llm_fallback_model: str = ""
+
 
 settings = Settings()

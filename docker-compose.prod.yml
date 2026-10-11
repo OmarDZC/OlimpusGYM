@@ -93,6 +93,10 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:?Define LLM_BASE_URL en .env.prod}
       LLM_API_KEY: ${LLM_API_KEY:?Define LLM_API_KEY en .env.prod}
       LLM_MODEL: ${LLM_MODEL:?Define LLM_MODEL en .env.prod}
+      # Proveedor de respaldo opcional (Trozo 9e): si se dejan vacías, no cambia nada.
+      LLM_FALLBACK_BASE_URL: ${LLM_FALLBACK_BASE_URL:-}
+      LLM_FALLBACK_API_KEY: ${LLM_FALLBACK_API_KEY:-}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-}
       BACKEND_BASE_URL: http://backend:8080
     expose:
       - "8000"

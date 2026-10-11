@@ -9,6 +9,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -21,6 +23,10 @@ import org.springframework.web.client.RestClientException;
 /** Llama a {@code POST /v1/assistant/chat} del servicio de IA (LOGIC.md §7). */
 @Component
 public class AssistantClient {
+
+    private static final Pattern DETAIL_PATTERN = Pattern.compile("\"detail\"\\s*:\\s*\"([^\"]*)\"");
+    private static final String DEFAULT_RATE_LIMIT_MESSAGE =
+            "El asistente ha alcanzado su límite de peticiones por ahora. Espera un momento y vuelve a intentarlo.";
 
     private final RestClient restClient;
 
@@ -51,11 +57,26 @@ public class AssistantClient {
         } catch (ResourceAccessException e) {
             throw new AssistantUnavailableException();
         } catch (RestClientException e) {
-            if (e instanceof HttpStatusCodeException httpError && httpError.getStatusCode().value() == 503) {
-                throw new AssistantUnavailableException();
+            if (e instanceof HttpStatusCodeException httpError) {
+                int status = httpError.getStatusCode().value();
+                if (status == 429) {
+                    throw new AssistantRateLimitedException(extractDetail(httpError));
+                }
+                if (status == 503) {
+                    throw new AssistantUnavailableException();
+                }
             }
             throw new AssistantFailedException();
         }
+    }
+
+    /** El cuerpo del 429 del servicio de IA es {@code {"detail": "mensaje en español"}}: se
+     * extrae ese mensaje para mostrárselo tal cual al socio, sin inventar uno genérico si el
+     * servicio ya dio uno claro. */
+    private String extractDetail(HttpStatusCodeException httpError) {
+        String body = httpError.getResponseBodyAsString();
+        Matcher matcher = DETAIL_PATTERN.matcher(body);
+        return matcher.find() ? matcher.group(1) : DEFAULT_RATE_LIMIT_MESSAGE;
     }
 
     private List<AiChatMessage> toAiMessages(List<ChatMessageDto> messages) {

@@ -3,6 +3,7 @@ package com.gymflow.common;
 import com.gymflow.ai.AiUsageLimitExceededException;
 import com.gymflow.assistant.AssistantNotAllowedException;
 import com.gymflow.assistant.ai.AssistantFailedException;
+import com.gymflow.assistant.ai.AssistantRateLimitedException;
 import com.gymflow.assistant.ai.AssistantUnavailableException;
 import com.gymflow.auth.EmailAlreadyRegisteredException;
 import com.gymflow.auth.InvalidCredentialsException;
@@ -14,6 +15,7 @@ import com.gymflow.contact.TooManyContactAttemptsException;
 import com.gymflow.plan.MembershipNotFoundException;
 import com.gymflow.workout.WorkoutNotAllowedException;
 import com.gymflow.workout.ai.TrainerFailedException;
+import com.gymflow.workout.ai.TrainerRateLimitedException;
 import com.gymflow.workout.ai.TrainerUnavailableException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
@@ -77,6 +79,13 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(TrainerRateLimitedException.class)
+    public ProblemDetail handleTrainerRateLimited(TrainerRateLimitedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+        problem.setTitle("Límite de peticiones del entrenador con IA");
+        return problem;
+    }
+
     @ExceptionHandler(TrainerUnavailableException.class)
     public ProblemDetail handleTrainerUnavailable(TrainerUnavailableException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
@@ -91,6 +100,13 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleAssistantNotAllowed(AssistantNotAllowedException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
         problem.setTitle("Asistente con IA no disponible para tu tarifa");
+        return problem;
+    }
+
+    @ExceptionHandler(AssistantRateLimitedException.class)
+    public ProblemDetail handleAssistantRateLimited(AssistantRateLimitedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+        problem.setTitle("Límite de peticiones del asistente con IA");
         return problem;
     }
 
