@@ -39,11 +39,26 @@ GymFlow: plataforma SaaS para gimnasios, proyecto de portfolio de un programador
 
 ## Cómo trabajar
 
-- Trozos verticales (backend + frontend de una funcionalidad) según `docs/ROADMAP.md`. Un commit por trozo, tests en verde y una entrada en `docs/PROGRESS.md` antes de pasar al siguiente.
+- Trozos verticales (backend + frontend de una funcionalidad) según `docs/ROADMAP.md`. Tests en verde y una entrada en `docs/PROGRESS.md` antes de pasar al siguiente.
 - Si algo no está especificado, elige la opción más simple, anótala en `docs/PROGRESS.md` y sigue. Pregunta solo si estás bloqueado o si una decisión no se puede deshacer.
 - No añadas funcionalidades fuera de alcance, ni siquiera "porque estaban en el diseño de referencia".
 - Mantén el estilo: reconstruye las pantallas como componentes reutilizables con los tokens de `docs/DESIGN.md`; no copies el HTML de Stitch, ni uses su CDN ni sus imágenes externas.
 - Di siempre con claridad qué verificaste y qué no pudiste verificar.
+
+## Git
+
+- **Sin firma de IA** en commits, ramas ni pull requests (ver `.claude/settings.json`,
+  `attribution.commit`/`attribution.pr` vacíos).
+- **Nunca commits directos a `main`.** Una rama por trozo (o por sub-parte del trozo, si el
+  encargo lo pide en varios commits), pull request, y merge con **squash** cuando la CI esté en
+  verde.
+- **Un commit por funcionalidad**, mensaje `tipo: descripción corta en español` (p. ej. `feat:
+  límite de uso de la IA por socio y por día`, `fix: cabecera CORS en producción`). Los tests de
+  esa funcionalidad van **dentro** del mismo commit, nunca en uno aparte.
+- Si la CI falla en una rama abierta, el arreglo va en esa misma rama (commit nuevo), no en una
+  rama ni PR aparte.
+- El historial ya existente (commits directos a `main` de antes de esta regla) no se reescribe
+  todavía: esto aplica desde ahora en adelante.
 
 ## Comandos
 

@@ -1,6 +1,8 @@
 package com.gymflow.workout;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gymflow.ai.AiFeature;
+import com.gymflow.ai.AiUsageLimiter;
 import com.gymflow.plan.Membership;
 import com.gymflow.plan.MembershipRepository;
 import com.gymflow.plan.MembershipStatus;
@@ -48,6 +50,7 @@ public class WorkoutService {
     private final PlanRepository memberPlans;
     private final TrainerClient trainerClient;
     private final ObjectMapper objectMapper;
+    private final AiUsageLimiter aiUsageLimiter;
 
     public WorkoutService(
             WorkoutPlanRepository plans,
@@ -55,13 +58,15 @@ public class WorkoutService {
             MembershipRepository memberships,
             PlanRepository memberPlans,
             TrainerClient trainerClient,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            AiUsageLimiter aiUsageLimiter) {
         this.plans = plans;
         this.logs = logs;
         this.memberships = memberships;
         this.memberPlans = memberPlans;
         this.trainerClient = trainerClient;
         this.objectMapper = objectMapper;
+        this.aiUsageLimiter = aiUsageLimiter;
     }
 
     /**
@@ -79,6 +84,7 @@ public class WorkoutService {
         if (!plan.isAiTrainer()) {
             throw new WorkoutNotAllowedException("Tu tarifa no incluye el entrenador con IA.");
         }
+        aiUsageLimiter.checkAndRecordUsage(tenantId, userId, plan.getCode(), AiFeature.ROUTINE);
 
         AiWeeklyPlan aiPlan = trainerClient.generatePlan(request);
         WeeklyPlan weeklyPlan = toWeeklyPlan(aiPlan);

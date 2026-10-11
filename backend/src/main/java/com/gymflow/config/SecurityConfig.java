@@ -40,10 +40,14 @@ public class SecurityConfig {
             .exceptionHandling(ex -> ex.authenticationEntryPoint(
                 (request, response, authException) -> response.sendError(HttpServletResponse.SC_FORBIDDEN)))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+                // Solo salud y métricas básicas (Trozo 8a-2); nunca públicas: Caddy no expone
+                // /actuator/** (ver Caddyfile), así que esto solo es alcanzable desde dentro
+                // de la red interna de Docker o con un túnel SSH, nunca desde fuera.
+                .requestMatchers("/actuator/health/**", "/actuator/metrics/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/public/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/demo-login")
+                .permitAll()
                 // Solo OWNER (p. ej. cambiar el plan de un socio, ver ingresos: LOGIC.md §2).
                 .requestMatchers("/api/v1/admin/owner/**").hasRole("OWNER")
                 .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/members/*/plan").hasRole("OWNER")

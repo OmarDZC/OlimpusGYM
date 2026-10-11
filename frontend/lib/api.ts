@@ -111,6 +111,26 @@ export async function fetchPublicLive(): Promise<PublicLiveStatus> {
   return response.json();
 }
 
+export type PublicConfig = {
+  demoMode: boolean;
+};
+
+export async function fetchPublicConfig(): Promise<PublicConfig> {
+  const response = await fetch(`${API_URL}/api/v1/public/config`);
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export async function demoLogin(role: "MEMBER" | "OWNER"): Promise<AuthResponse> {
+  const response = await fetch(`${API_URL}/api/v1/auth/demo-login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
 export type BookingStatus = "BOOKED" | "WAITLIST" | "CANCELLED" | "ATTENDED" | "NO_SHOW";
 
 export type MyBooking = {

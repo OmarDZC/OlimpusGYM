@@ -31,11 +31,12 @@ class ProductionAdminSeederTest {
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
 
     @Test
-    void createsTheOwnerWhenTheTenantAndTheAccountDoNotExistYet() {
-        when(tenants.findBySlug(Tenant.DEFAULT_SLUG)).thenReturn(Optional.empty());
-        Tenant savedTenant = new Tenant("OlympusGYM", Tenant.DEFAULT_SLUG);
-        when(tenants.save(any())).thenReturn(savedTenant);
-        when(users.existsByTenantIdAndEmailIgnoreCase(savedTenant.getId(), "admin@example.com")).thenReturn(false);
+    void createsTheOwnerWhenTheTenantExistsAndTheAccountDoesNotYet() {
+        // BusinessDataSeeder (Trozo 8a-2) garantiza el tenant antes de que este corra: ya no lo
+        // crea él mismo, solo lo busca.
+        Tenant existingTenant = new Tenant("OlympusGYM", Tenant.DEFAULT_SLUG);
+        when(tenants.findBySlug(Tenant.DEFAULT_SLUG)).thenReturn(Optional.of(existingTenant));
+        when(users.existsByTenantIdAndEmailIgnoreCase(existingTenant.getId(), "admin@example.com")).thenReturn(false);
         when(passwordEncoder.encode("una-contraseña-larga")).thenReturn("hash");
 
         ProductionAdminSeeder seeder = new ProductionAdminSeeder(
@@ -48,7 +49,18 @@ class ProductionAdminSeederTest {
         assertEquals("admin@example.com", saved.getEmail());
         assertEquals("hash", saved.getPasswordHash());
         assertEquals(Role.OWNER, saved.getRole());
-        assertEquals(savedTenant.getId(), saved.getTenantId());
+        assertEquals(existingTenant.getId(), saved.getTenantId());
+    }
+
+    @Test
+    void failsClearlyWhenTheTenantDoesNotExistYet() {
+        when(tenants.findBySlug(Tenant.DEFAULT_SLUG)).thenReturn(Optional.empty());
+
+        ProductionAdminSeeder seeder = new ProductionAdminSeeder(
+            tenants, users, passwordEncoder, "admin@example.com", "una-contraseña-larga");
+
+        assertThrows(IllegalStateException.class, seeder::run);
+        verify(users, never()).save(any());
     }
 
     @Test

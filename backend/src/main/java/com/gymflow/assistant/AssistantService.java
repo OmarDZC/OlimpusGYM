@@ -1,5 +1,7 @@
 package com.gymflow.assistant;
 
+import com.gymflow.ai.AiFeature;
+import com.gymflow.ai.AiUsageLimiter;
 import com.gymflow.assistant.ai.AssistantClient;
 import com.gymflow.assistant.dto.AssistantChatRequest;
 import com.gymflow.assistant.dto.AssistantChatResponse;
@@ -18,11 +20,17 @@ public class AssistantService {
     private final MembershipRepository memberships;
     private final PlanRepository plans;
     private final AssistantClient assistantClient;
+    private final AiUsageLimiter aiUsageLimiter;
 
-    public AssistantService(MembershipRepository memberships, PlanRepository plans, AssistantClient assistantClient) {
+    public AssistantService(
+            MembershipRepository memberships,
+            PlanRepository plans,
+            AssistantClient assistantClient,
+            AiUsageLimiter aiUsageLimiter) {
         this.memberships = memberships;
         this.plans = plans;
         this.assistantClient = assistantClient;
+        this.aiUsageLimiter = aiUsageLimiter;
     }
 
     public AssistantChatResponse chat(UUID tenantId, UUID userId, String memberToken, AssistantChatRequest request) {
@@ -34,6 +42,7 @@ public class AssistantService {
         if (!plan.isAiAssistant()) {
             throw new AssistantNotAllowedException("Tu tarifa no incluye el asistente con IA.");
         }
+        aiUsageLimiter.checkAndRecordUsage(tenantId, userId, plan.getCode(), AiFeature.ASSISTANT_MESSAGE);
 
         return assistantClient.chat(memberToken, request);
     }

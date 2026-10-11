@@ -13,6 +13,247 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 8a-2 (commit 2 de 2) - Producción: seguridad operativa y límite de IA (2026-10-11)
+- Hecho:
+  - **Copias de seguridad**: `scripts/backup-db.sh` (`pg_dump -Fc`, formato "custom",
+    comprimido de por sí, con la fecha en el nombre, conserva solo las últimas 7) y
+    `scripts/restore-db.sh` (`pg_restore --clean --if-exists`, funciona igual si el destino
+    está vacío o ya tiene datos; pide escribir "RESTAURAR" antes de nada, salvo `--yes`).
+    Instrucciones de cron en el propio script y en `docs/DEPLOY.md`.
+  - **Actuator restringido**: `management.endpoints.web.exposure.include: health,metrics`
+    (antes también `info` y `prometheus`, sin usarse realmente: no hay
+    `micrometer-registry-prometheus` en el classpath). `SecurityConfig` solo deja pasar sin
+    autenticación `/actuator/health/**` y `/actuator/metrics/**`; cualquier otra ruta de
+    Actuator (`/actuator/env`, `/actuator/info`...) da 403. Nunca públicos de verdad: el
+    `Caddyfile` no tiene ninguna ruta hacia `/actuator/**` (solo `/api/*` va al backend, todo
+    lo demás al frontend), así que solo son alcanzables desde dentro de la red interna de
+    Docker o con un túnel SSH (documentado en `docs/DEPLOY.md`).
+  - **Redis en `docker-compose.prod.yml`**: con contraseña (`REDIS_PASSWORD`, obligatoria),
+    sin puerto publicado (solo `expose`), healthcheck con `redis-cli -a ... ping`. Al estar
+    Redis presente de verdad, se quitaron `application-prod.yml` y `application-demo.yml`
+    (desactivaban el indicador de salud de Redis cuando no estaba en el stack, Trozo 8a-1/
+    8a-2 commit 1): ya no hace falta, `/actuator/health` vuelve a comprobarlo de verdad.
+  - **Límite de uso de la IA** (`AiUsageLimiter`, nuevo): por socio y por día según su
+    tarifa (BÁSICA no tiene IA, no le aplica ningún límite: su tarifa ya bloquea antes de
+    llegar aquí), con contadores en Redis (`INCR` + expiración a las 26 h, para que la clave
+    muera sola). Por defecto, configurable por variable de entorno:
+    COMPLETA 5 rutinas / 40 mensajes de asistente al día; ATLETA_PRO 10 rutinas / 80
+    mensajes. Más un **tope global diario único** para toda la aplicación (rutinas y
+    mensajes juntos, todas las tarifas: es el cupo del proveedor del LLM el que hay que
+    proteger), 500 por defecto. Se comprueba el cupo del socio antes que el global (si el
+    socio ya no tiene cupo, ni se mira el global). Al superarse cualquiera de los dos, 429
+    con un mensaje claro en español llano ("Has alcanzado tu límite diario de uso de la
+    IA..." o, el global, "La demostración ha alcanzado su límite de IA de hoy, vuelve
+    mañana"); el frontend ya lo muestra sin jerga porque reutiliza el manejo genérico de
+    `ApiError` que ya tenían `/entrenador-ia` y el chat del asistente (ningún cambio de
+    frontend hizo falta para esto). Integrado en `WorkoutService.generate()` y
+    `AssistantService.chat()`, justo después de comprobar que la tarifa incluye esa función
+    de IA.
+  - **Si Redis falla, la IA sigue funcionando**: `AiUsageLimiter.checkAndRecordUsage()`
+    atrapa cualquier error de Redis, registra un aviso (`WARN`) y deja pasar la petición sin
+    lanzar nada. Con el cliente de Redis por defecto (sin límite de tiempo corto), un Redis
+    caído tardaba **varios segundos** en darse por vencido (confirmado de verdad parando el
+    contenedor de Redis con el stack real arriba: una petición tardó más de 30 segundos).
+    Arreglado con `spring.data.redis.connect-timeout`/`timeout: 300ms`: con Redis realmente
+    caído, la misma petición pasa a tardar **0,5 segundos** en total (confirmado otra vez con
+    el stack real, `time curl`).
+  - Tests nuevos: `AiUsageLimiterTest` (Testcontainers con un Redis real de verdad y reloj
+    controlado: el límite se aplica por socio, no se comparte entre socios distintos, ATLETA_PRO
+    tiene más cupo que COMPLETA, se reinicia al día siguiente, el tope global bloquea aunque
+    sean socios distintos, y un Redis roto de verdad —apuntando a un puerto cerrado— no
+    impide la petición). `ActuatorHttpTest` (health y metrics sin autenticación, cualquier
+    otra ruta de Actuator da 403).
+  - **`docs/DEPLOY.md`** (nuevo): guía completa paso a paso para un VPS Ubuntu, para alguien
+    que nunca ha desplegado nada: crear el servidor, usuario sin privilegios de root,
+    firewall (`ufw`, solo 22/80/443), instalar Docker, clonar el repositorio, crear
+    `.env.prod`, apuntar el dominio, arrancar el stack, comprobarlo, backups y (si aplica)
+    reinicio de demo por cron, cómo actualizar con `git pull`, y una lista de comprobación
+    final.
+- Hecho con el stack real (`docker-compose.prod.yml`, valores de prueba, nunca commiteados):
+  - `docker compose -f docker-compose.prod.yml --env-file .env.prod config`: válido con
+    Redis añadido.
+  - Los 6 servicios (antes 5) llegan a `healthy`, Redis incluido.
+  - `/actuator/health` desde dentro del contenedor del backend (`docker exec ... curl`): 200,
+    `{"status":"UP",...}`, con Redis sano. `/actuator/metrics`: 200 sin cabecera de
+    autorización. `/actuator/info` y `/actuator/env`: 403. A través de Caddy
+    (`curl http://localhost/actuator/health`, puerto público): 404 — nunca llega al backend.
+  - **Copias de seguridad probadas de verdad**: `backup-db.sh` creó un volcado real; probada
+    la rotación generando 11 copias a mano (con fechas distintas) y comprobando que, tras la
+    siguiente copia, solo quedaban las 7 más recientes. **Restauración probada de verdad en
+    una base de datos vacía**: se levantó un contenedor Postgres nuevo, sin ningún dato, aparte
+    del stack (misma red de Docker); se restauró el volcado con `pg_restore` ahí: los 15
+    usuarios, 1 tenant, 3 tarifas y 13 reservas del origen aparecieron exactamente igual.
+    También se ejecutó `restore-db.sh` tal cual (con `--yes`) contra la base de datos real
+    del stack, sin errores.
+  - **Límite de uso de la IA probado de verdad**: con límites bajos de prueba por variable de
+    entorno (1-3 según la función), entrando como el socio de demo (Carlos, ATLETA_PRO) y
+    llamando a `POST /me/workout/generate` repetidas veces: los primeros intentos (dentro del
+    cupo) llegaron a la IA (fallaron con 503 por no haber un LLM real configurado en esta
+    máquina, un fallo distinto y esperado); el intento que superaba el cupo del socio dio
+    **429** con el mensaje exacto `"Has alcanzado tu límite diario de uso de la IA. Vuelve a
+    intentarlo mañana."`, sin llegar a llamar al servicio de IA. Comprobadas las claves y
+    valores en Redis directamente (`redis-cli ... get`): el contador del socio quedó en 3 (se
+    incrementa incluso en el intento que bloquea) y el global en 2 (el global no se toca si ya
+    bloqueó el límite del socio), con un TTL de unas 26 horas, tal como se diseñó.
+  - **Fallo de Redis probado de verdad**: parado el contenedor de Redis a mitad de prueba, una
+    llamada a `/me/workout/generate` siguió respondiendo (503 por el LLM, no por el límite),
+    con el aviso esperado en el log del backend
+    (`AiUsageLimiter: No se pudo comprobar el límite de uso de la IA en Redis: la petición se
+    deja pasar.`). Al arrancar Redis de nuevo, Lettuce reconectó solo en segundos y
+    `/actuator/health` volvió a `UP`.
+  - `mvn test` (sin Docker en esta máquina, mismo límite de siempre): 120 tests, 0 fallos, 0
+    errores, 101 omitidos (incluidos los 9 nuevos de este commit, verificados de verdad contra
+    el stack real arriba y que correrán también en la CI real).
+- Decisiones / simplificaciones:
+  - El tope global es **uno solo para toda la aplicación** (rutinas y mensajes del asistente
+    juntos), no uno por función: lo que hay que proteger es el cupo del proveedor del LLM en
+    conjunto, no cada función por separado.
+  - Si una petición supera el límite del propio socio, su contador ya quedó incrementado (no
+    se "devuelve" el intento) y el contador global no se toca (la petición nunca llegó a
+    intentarse de verdad). Es la opción más simple dado el alcance de este MVP; en una
+    aplicación con más tráfico real valdría la pena decrementar el contador del socio para no
+    "gastarle" un intento que nunca sucedió.
+  - `application-prod.yml`/`application-demo.yml` se borraron en vez de dejarlos vacíos: con
+    Redis presente de verdad en ambos perfiles, no había nada que esos archivos necesitaran
+    seguir desactivando.
+  - El tiempo de conexión/comando de Redis se fijó corto (300 ms) a propósito, también para
+    desarrollo (mismo `application.yml`): un valor tan corto nunca debería notarse con Redis
+    sano (la red de Docker Compose es local), y evita que un Redis caído en producción se
+    note como una web lenta en vez de como "la IA funciona igual, solo sin el límite".
+- Pendiente: nada de lo pedido en este trozo. Quedan, fuera de alcance (ver
+  `docs/ROADMAP.md`, "Pendiente antes de lanzar"): sesión de pruebas manual completa,
+  despliegue real en un VPS siguiendo esta guía, medir rendimiento con Lighthouse, decidir el
+  modelo de IA real para la demo pública, README final con capturas/vídeo, y la limpieza del
+  historial de git antes de hacer público el repositorio.
+- Cómo probarlo:
+  - `mvn test` (backend; con Docker real los 9 tests nuevos dejan de omitirse).
+  - Backups: `./scripts/backup-db.sh .env.prod` y, para probar una restauración,
+    `./scripts/restore-db.sh backups/el-archivo.dump .env.prod`.
+  - Límite de IA: entrar como un socio con tarifa COMPLETA o ATLETA_PRO y generar rutinas o
+    hablar con el asistente más veces que el límite configurado; la respuesta 429 debería
+    aparecer en el frontend como un mensaje de error normal, sin jerga.
+  - Despliegue guiado completo: seguir `docs/DEPLOY.md` de principio a fin en un VPS real.
+- Tests: `mvn test` → BUILD SUCCESS, 120 tests, 0 fallos, 0 errores (101 omitidos por falta de
+  Docker en esta máquina, incluidos los 9 nuevos, verificados aparte contra el stack real).
+
+---
+
+### Trozo 8a-2 (commit 1 de 2) - Producción: datos, modo demo (2026-10-11)
+- Hecho:
+  - **Datos de negocio siempre presentes, en todos los perfiles**: `BusinessDataSeeder`
+    (`@Component`, sin `@Profile`, `@Order(0)`) crea el tenant único `olympusgym` y las 3
+    tarifas reales (BÁSICA 39 €, COMPLETA 59 €, ATLETA_PRO 79 €, con los límites de clases/mes,
+    ventana de reserva y acceso a IA de `docs/LOGIC.md`), idempotente. Antes esto lo creaba
+    `DevDataSeeder` (solo dev/demo); ahora `DevDataSeeder` y `ProductionAdminSeeder` solo
+    *buscan* el tenant/tarifas (`orElseThrow`, nunca los crean) y corren después
+    (`@Order(10)`), para no pisarse con `BusinessDataSeeder`. Verificado con un test de
+    Testcontainers con el perfil `prod` activo: hay tenant y las 3 tarifas con los precios
+    exactos, y no hay ni un solo socio ni cuenta de ejemplo (`users.count() == 1`, solo el
+    admin real).
+  - **Modo demo desplegable**: `docker-compose.prod.yml` arranca con `SPRING_PROFILES_ACTIVE`
+    como variable (`prod` por defecto, o `demo`), mismo stack y mismo `Caddyfile`.
+    - `GET /api/v1/public/config` (`PublicConfigController`, público) devuelve
+      `{"demoMode": true|false}` según `environment.matchesProfiles("demo")`.
+    - `/acceso` muestra, solo si `demoMode` es `true`: una franja "Demostración: los datos son
+      de ejemplo y se reinician cada noche" y dos botones, "Entrar como socio de
+      demostración" / "Entrar como dueño de demostración", que llaman a
+      `POST /api/v1/auth/demo-login` (`{"role": "MEMBER"|"OWNER"}`) y entran como
+      `carlos@olympusgym.test` / `javier@olympusgym.test` (las mismas cuentas de siempre del
+      seed). Ese endpoint responde **404** (nunca 403, para no dar pistas de que existe) si
+      el perfil activo no es `demo`.
+    - `DevDataSeeder` reutiliza su lógica de siempre (horario de 2 semanas, 12 socios, la
+      rutina de Carlos...) también en modo demo, pero: nunca crea la cuenta de admin de
+      desarrollo (`omaradmin`/contraseña corta y publicada en el README), y las cuentas usan
+      contraseñas fuertes por variable de entorno (`DEMO_OWNER_PASSWORD`,
+      `DEMO_MEMBER_PASSWORD`, sin prefijo `GYMFLOW_` a propósito, igual que las pide el
+      encargo) en vez de la contraseña de desarrollo compartida. Si faltan en modo demo, el
+      backend se niega a arrancar (mismo patrón que `ProductionSecretsValidator`).
+    - `ProductionSecretsValidator` (el secreto de JWT fuerte y no el de ejemplo del repo) pasa
+      de `@Profile("prod")` a `@Profile({"prod", "demo"})`: la demo es igual de pública que
+      producción (mismo dominio expuesto), así que necesita la misma garantía. Lista
+      explícita de perfiles, no una negación (`"!dev & !demo"`): esa forma fue la causa de un
+      fallo real en CI en el Trozo 8a-1 (ver esa entrada) porque también coincide con el
+      contexto "sin perfil activo" en el que corren casi todos los tests; una lista explícita
+      no tiene ese problema.
+    - `application-demo.yml` (nuevo, solo perfil `demo`): `management.health.redis.enabled:
+      false`, mismo motivo y mismo arreglo que `application-prod.yml` del Trozo 8a-1 (Redis no
+      está en el stack todavía, así que el indicador automático de Spring Boot dejaría
+      `/actuator/health` en 503 si no se desactiva).
+  - **`scripts/reset-demo.sh`**: pensado para cron nocturno. Comprueba que
+    `SPRING_PROFILES_ACTIVE=demo` en el `.env.prod` indicado (si no, aborta: este script borra
+    datos de socios y reservas, no debe poder ejecutarse por error contra producción de
+    verdad); trunca con `CASCADE` las tablas de datos de ejemplo/de usuario (`users`,
+    `memberships`, `class_sessions`, `bookings`, `workout_plans`, `workout_logs`,
+    `membership_plan_changes`, `contact_messages`) **sin tocar** `tenants` ni `plans` (esos son
+    datos de negocio reales, no de ejemplo); reinicia el contenedor del backend para que
+    `BusinessDataSeeder` y `DevDataSeeder` vuelvan a sembrar la demo desde cero al arrancar.
+  - Tests nuevos: `BusinessDataSeederTest` (unitario puro, con mocks: crea tenant+3 tarifas si
+    no existen, no hace nada si ya existen) y `BusinessDataSeederProductionProfileTest`
+    (Testcontainers, perfil `prod`: tenant y tarifas con los valores exactos, sin socios ni
+    cuentas de demo). `DemoLoginHttpTest` (Testcontainers, perfil `demo`: `/public/config`
+    devuelve `demoMode=true`, login como OWNER/MEMBER funciona y devuelve la cuenta correcta,
+    un rol inválido da 400) y `DemoLoginDisabledInProductionTest` (Testcontainers, perfil
+    `prod`: `demoMode=false`, `/auth/demo-login` da 404). `ProductionAdminSeederTest` ajustado
+    (ahora asume que el tenant ya existe; nuevo caso: falla claro si no existe).
+- Hecho con el stack real (`docker-compose.prod.yml`, valores de prueba, nunca commiteados):
+  - **Modo demo**: `SPRING_PROFILES_ACTIVE=demo`, `DEMO_OWNER_PASSWORD`/`DEMO_MEMBER_PASSWORD`
+    de prueba. Los 5 contenedores llegan a `healthy`. `curl` real a través de Caddy:
+    `GET /api/v1/public/config` → `{"demoMode":true}`; `POST /api/v1/auth/demo-login` como
+    OWNER y como MEMBER → 200 con el token y la cuenta correcta; con un rol inválido → 400.
+    En el navegador, `/acceso` muestra la franja y los dos botones; al pulsar "Entrar como
+    socio de demostración" entra de verdad como Carlos y redirige a `/cuenta` con sus datos
+    (rutina, constancia, cuota Atleta Pro).
+    - `scripts/reset-demo.sh` probado de verdad: antes del reinicio había 15 usuarios, 13
+      reservas y 84 sesiones de clase; tras ejecutarlo, las tablas de ejemplo quedaron vacías,
+      el backend se reinició, volvió a `healthy`, y al terminar de sembrar había exactamente
+      los mismos 15/13/84 (datos frescos, mismo volumen que el seed de siempre), con `tenants`
+      y `plans` intactos durante todo el proceso, y el login de demo siguiendo funcionando
+      después.
+  - **Modo producción, para comprobar que no se rompió nada**: `SPRING_PROFILES_ACTIVE=prod`
+    con volúmenes nuevos (sin datos de la prueba de demo anterior). `GET /public/config` →
+    `{"demoMode":false}`; `POST /auth/demo-login` → 404; login con el admin real
+    (`ADMIN_EMAIL`/`ADMIN_PASSWORD` de prueba) → 200, rol OWNER; las cuentas conocidas de
+    dev/demo (`javier@olympusgym.test` con `Demo1234!`, `omaradmin@gmail.com`) → 401 (no
+    existen).
+  - `mvn test` (sin Docker en esta máquina, mismo límite de siempre): 111 tests, 0 fallos, 0
+    errores, 92 omitidos (incluidos los 6 nuevos de Testcontainers de este commit, que sí
+    corrieron de verdad contra el stack real arriba y correrán también en la CI real). Los 3
+    unitarios puros nuevos (`BusinessDataSeederTest`) y los existentes
+    (`ProductionSecretsValidatorTest`, `ProductionAdminSeederTest`) en verde sin omitir nada.
+  - Frontend: `npm run typecheck` y `npm run build` en verde (incluye la franja y los botones
+    nuevos de `/acceso`).
+- Decisiones / simplificaciones:
+  - `DevDataSeeder` se reutiliza para dev y demo en vez de crear un seeder de demo aparte: dan
+    el mismo volumen de datos de ejemplo (horario, socios, reservas, rutina de Carlos) y así la
+    demo pública no sale "vacía" ni necesita su propio código casi duplicado, solo cambia qué
+    contraseña usa cada cuenta y si se crea o no la cuenta de admin de desarrollo.
+  - Las cuentas fijas de los botones de demo son las mismas del seed de siempre
+    (`javier@olympusgym.test` / `carlos@olympusgym.test`), no cuentas nuevas: Carlos ya tiene
+    rutina y tarifa Atleta Pro (con IA) de ejemplo, así que el botón de "socio" enseña algo
+    interesante desde el primer segundo.
+  - `GYMFLOW_ADMIN_EMAIL`/`GYMFLOW_ADMIN_PASSWORD` y `DEMO_OWNER_PASSWORD`/
+    `DEMO_MEMBER_PASSWORD` dejaron de ser obligatorios (`${VAR:?...}`) en
+    `docker-compose.prod.yml` y pasaron a `${VAR:-}` (opcionales con Compose, vacíos por
+    defecto): antes de este commit solo existía el perfil `prod` y esas dos primeras eran
+    siempre obligatorias; ahora, según el perfil, hace falta un par o el otro, y Compose no
+    sabe interpolar variables condicionalmente. La comprobación "de verdad" sigue existiendo,
+    solo que la hace el backend al arrancar (`ProductionAdminSeeder`/`DevDataSeeder`), con un
+    mensaje igual de claro, aunque el fallo llegue unos segundos más tarde que si lo detectara
+    `docker compose up` al vuelo.
+- Pendiente: el commit 2 de este trozo (copias de seguridad, Actuator restringido, Redis y
+  límite de uso de la IA, `docs/DEPLOY.md`).
+- Cómo probarlo:
+  - `mvn test` (backend, con Docker real los 6 tests nuevos de demo dejan de omitirse).
+  - Demo real: `cp .env.prod.example .env.prod`, rellenar con `SPRING_PROFILES_ACTIVE=demo` y
+    las contraseñas de demo, `docker compose -f docker-compose.prod.yml --env-file .env.prod
+    up -d --build`, abrir `http://localhost/acceso` y pulsar cualquiera de los dos botones.
+    `./scripts/reset-demo.sh .env.prod` para probar el reinicio nocturno a mano.
+- Tests: `mvn test` → BUILD SUCCESS, 111 tests, 0 fallos, 0 errores (92 omitidos por falta de
+  Docker en esta máquina, incluidos los 6 nuevos, verificados aparte contra el stack real).
+  Frontend: `npm run typecheck` y `npm run build` en verde.
+
+---
+
 ### Trozo 8a-1 - Producción: lo esencial (2026-10-11)
 - Hecho:
   - **RabbitMQ quitado por completo**: nada lo usaba (ni `@RabbitListener` ni `RabbitTemplate`

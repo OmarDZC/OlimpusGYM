@@ -35,24 +35,30 @@ import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Datos de ejemplo del tenant único "olympusgym": owner, staff, socios, tarifas, horario de
- * las próximas dos semanas y algunas reservas (LOGIC.md §1). Solo corre en los perfiles
- * dev/demo y nunca en producción.
+ * Datos de ejemplo del tenant único "olympusgym": owner, staff, socios, horario de las
+ * próximas dos semanas y algunas reservas (LOGIC.md §1). Solo corre en los perfiles dev/demo y
+ * nunca en producción. El tenant y las 3 tarifas reales ya no los crea esta clase (Trozo
+ * 8a-2): los crea {@link BusinessDataSeeder}, que corre en todos los perfiles y antes que este
+ * (@Order).
  *
- * <p>Las cuentas y las tarifas son idempotentes (se pueden recrear en cada arranque sin
- * duplicar). El horario y las reservas de ejemplo, en cambio, solo se generan **una vez**
- * (si ya hay alguna sesión de clase, no se tocan): sus fechas son relativas a "ahora", así
- * que regenerarlas en cada arranque las dejaría con fechas inconsistentes.
+ * <p>Las cuentas son idempotentes (se pueden recrear en cada arranque sin duplicar). El
+ * horario y las reservas de ejemplo, en cambio, solo se generan **una vez** (si ya hay alguna
+ * sesión de clase, no se tocan): sus fechas son relativas a "ahora", así que regenerarlas en
+ * cada arranque las dejaría con fechas inconsistentes.
  */
 @Component
 @Profile({"dev", "demo"})
+@Order(10)
 public class DevDataSeeder implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DevDataSeeder.class);
@@ -113,6 +119,9 @@ public class DevDataSeeder implements CommandLineRunner {
     private final WorkoutLogRepository workoutLogs;
     private final WorkoutService workoutService;
     private final PasswordEncoder passwordEncoder;
+    private final Environment environment;
+    private final String demoOwnerPassword;
+    private final String demoMemberPassword;
 
     public DevDataSeeder(
             TenantRepository tenants,
@@ -124,7 +133,10 @@ public class DevDataSeeder implements CommandLineRunner {
             WorkoutPlanRepository workoutPlans,
             WorkoutLogRepository workoutLogs,
             WorkoutService workoutService,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            Environment environment,
+            @Value("${gymflow.demo.owner-password:}") String demoOwnerPassword,
+            @Value("${gymflow.demo.member-password:}") String demoMemberPassword) {
         this.tenants = tenants;
         this.users = users;
         this.plans = plans;
@@ -135,20 +147,43 @@ public class DevDataSeeder implements CommandLineRunner {
         this.workoutLogs = workoutLogs;
         this.workoutService = workoutService;
         this.passwordEncoder = passwordEncoder;
+        this.environment = environment;
+        this.demoOwnerPassword = demoOwnerPassword;
+        this.demoMemberPassword = demoMemberPassword;
+    }
+
+    /** {@code true} con el perfil "demo" activo (despliegue público de ejemplo): mismos datos
+     * que "dev", pero sin la cuenta de admin de desarrollo y con las contraseñas fuertes de
+     * {@code DEMO_OWNER_PASSWORD}/{@code DEMO_MEMBER_PASSWORD} en vez de las de desarrollo,
+     * conocidas y publicadas en el README. */
+    private boolean isDemoMode() {
+        return environment.matchesProfiles("demo");
     }
 
     @Override
     @Transactional
     public void run(String... args) {
+        // El tenant y las 3 tarifas ya existen: los crea BusinessDataSeeder (@Order(0), corre
+        // en todos los perfiles, antes que este). Aquí solo se buscan.
         Tenant tenant = tenants.findBySlug(Tenant.DEFAULT_SLUG)
-            .orElseGet(() -> tenants.save(new Tenant("OlympusGYM", Tenant.DEFAULT_SLUG)));
+            .orElseThrow(() -> new IllegalStateException(
+                "No existe el tenant por defecto: BusinessDataSeeder debería haberlo creado antes."));
+        Plan basica = findPlan(tenant, PlanCode.BASICA);
+        Plan completa = findPlan(tenant, PlanCode.COMPLETA);
+        Plan pro = findPlan(tenant, PlanCode.ATLETA_PRO);
 
-        Plan basica = ensurePlan(tenant, PlanCode.BASICA, "Tarifa Básica", 3900, 4, 7, false, false);
-        Plan completa = ensurePlan(tenant, PlanCode.COMPLETA, "Tarifa Completa", 5900, null, 14, true, true);
-        Plan pro = ensurePlan(tenant, PlanCode.ATLETA_PRO, "Tarifa Atleta Pro", 7900, null, 14, true, true);
+        boolean demoMode = isDemoMode();
+        if (demoMode && (demoOwnerPassword.isBlank() || demoMemberPassword.isBlank())) {
+            throw new IllegalStateException(
+                "DEMO_OWNER_PASSWORD y DEMO_MEMBER_PASSWORD son obligatorios en modo demo.");
+        }
 
         ensureUser(tenant, "javier@olympusgym.test", "Javier M.", Role.OWNER);
-        ensureUser(tenant, DEV_ADMIN_EMAIL, "Omar (admin de desarrollo)", Role.OWNER, DEV_ADMIN_PASSWORD);
+        if (!demoMode) {
+            // El admin de desarrollo (contraseña corta, conocida y publicada en el README) no
+            // tiene sitio en un despliegue público, aunque sea "solo" de demostración.
+            ensureUser(tenant, DEV_ADMIN_EMAIL, "Omar (admin de desarrollo)", Role.OWNER, DEV_ADMIN_PASSWORD);
+        }
         User marta = ensureUser(tenant, "marta@olympusgym.test", "Marta Gómez", Role.STAFF);
         User dani = ensureUser(tenant, "dani@olympusgym.test", "Dani Rodríguez", Role.STAFF);
 
@@ -331,22 +366,21 @@ public class DevDataSeeder implements CommandLineRunner {
         }
     }
 
-    private Plan ensurePlan(
-            Tenant tenant,
-            PlanCode code,
-            String name,
-            int priceCents,
-            Integer classesPerMonth,
-            int bookingWindowDays,
-            boolean aiTrainer,
-            boolean aiAssistant) {
+    private Plan findPlan(Tenant tenant, PlanCode code) {
         return plans.findByTenantIdAndCode(tenant.getId(), code)
-            .orElseGet(() -> plans.save(new Plan(
-                tenant.getId(), code, name, priceCents, classesPerMonth, bookingWindowDays, aiTrainer, aiAssistant)));
+            .orElseThrow(() -> new IllegalStateException(
+                "No existe la tarifa " + code + ": BusinessDataSeeder debería haberla creado antes."));
     }
 
     private User ensureUser(Tenant tenant, String email, String fullName, Role role) {
-        return ensureUser(tenant, email, fullName, role, DEMO_PASSWORD);
+        String password = DEMO_PASSWORD;
+        if (isDemoMode()) {
+            // El dueño y el staff comparten la contraseña "de owner" (ninguna de las dos se
+            // anuncia salvo la que de verdad usan los botones de demo, ver DEMO_OWNER_EMAIL);
+            // los socios, la de "member".
+            password = role == Role.MEMBER ? demoMemberPassword : demoOwnerPassword;
+        }
+        return ensureUser(tenant, email, fullName, role, password);
     }
 
     /** Igual que {@link #ensureUser(Tenant, String, String, Role)}, pero con una contraseña propia

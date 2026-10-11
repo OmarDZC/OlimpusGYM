@@ -158,17 +158,33 @@ También corren en GitHub Actions (job `e2e` de la CI) contra el mismo `docker c
 
 ## Despliegue en producción
 
-`docker-compose.prod.yml` (Trozo 8a-1): backend, servicio de IA, frontend, PostgreSQL normal
-(sin pgvector — nada lo usa todavía, ver `docs/PROGRESS.md`) y Caddy como único punto de
-entrada, con HTTPS automático (Let's Encrypt) cuando `DOMAIN` es un dominio real. Solo Caddy
-publica puertos (80 y 443); el resto de servicios solo son alcanzables entre sí, por la red
-interna de Docker Compose. Sin Redis todavía (a propósito: no aporta nada que el MVP necesite
-ahora mismo) ni backups ni métricas (quedan para una siguiente vuelta del Trozo 8).
+`docker-compose.prod.yml` (Trozo 8a-1 y 8a-2): backend, servicio de IA, frontend, PostgreSQL
+normal (sin pgvector — nada lo usa todavía, ver `docs/PROGRESS.md`), Redis (con contraseña,
+solo para el límite de uso de la IA) y Caddy como único punto de entrada, con HTTPS
+automático (Let's Encrypt) cuando `DOMAIN` es un dominio real. Solo Caddy publica puertos (80
+y 443); el resto de servicios solo son alcanzables entre sí, por la red interna de Docker
+Compose. Guía completa paso a paso para un VPS Ubuntu en `docs/DEPLOY.md`.
 
 ```bash
 cp .env.prod.example .env.prod   # y rellena los valores reales, nunca los de ejemplo
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
+
+El tenant único `olympusgym` y las 3 tarifas reales (`BusinessDataSeeder`) se crean siempre,
+en cualquier perfil. Qué más hay, lo decide `SPRING_PROFILES_ACTIVE` (variable de
+`docker-compose.prod.yml`, por defecto `prod`):
+
+- **`prod`**: solo el tenant, las tarifas y el OWNER real (`ProductionAdminSeeder`, a partir
+  de `ADMIN_EMAIL`/`ADMIN_PASSWORD`). Nada de ejemplo: ni socios, ni horario, ni cuentas de
+  demo.
+- **`demo`**: para una demo pública con datos de ejemplo. `DevDataSeeder` siembra el mismo
+  horario, socios y rutinas que en desarrollo (pero con las contraseñas fuertes de
+  `DEMO_OWNER_PASSWORD`/`DEMO_MEMBER_PASSWORD`, nunca las de desarrollo, y sin la cuenta de
+  admin de desarrollo). `/acceso` muestra una franja de aviso y dos botones ("Entrar como
+  socio/dueño de demostración") que inician sesión sin contraseña contra las cuentas de
+  ejemplo (`POST /api/v1/auth/demo-login`, que en modo `prod` ni siquiera existe: 404). Para
+  reiniciar la demo cada noche a sus datos de siempre: `./scripts/reset-demo.sh .env.prod`
+  (pensado para cron; borra lo que hayan creado o cambiado los visitantes y reseeda).
 
 Variables obligatorias en `.env.prod` (el backend se niega a arrancar si faltan o son
 inválidas, ver `ProductionSecretsValidator`):
@@ -178,19 +194,30 @@ inválidas, ver `ProductionSecretsValidator`):
 | `DOMAIN` | Dominio real para HTTPS automático, o una IP / `:80` para una primera prueba en HTTP |
 | `PUBLIC_URL` | URL pública completa con esquema (`https://...` o `http://...`), coherente con `DOMAIN`: el frontend la hornea en el bundle del navegador en tiempo de build, y es el único origen que admite CORS |
 | `POSTGRES_PASSWORD` | Sin valor de ejemplo: ponlo tú |
+| `REDIS_PASSWORD` | Sin valor de ejemplo: ponlo tú (`openssl rand -base64 24`) |
 | `JWT_SECRET` | Mínimo 32 caracteres, aleatorio y distinto del valor de ejemplo del repo (`openssl rand -base64 48`) |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | El mismo proveedor compatible con OpenAI que en desarrollo (ver más arriba) |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | El OWNER real del gimnasio (mínimo 12 caracteres en la contraseña); lo crea `ProductionAdminSeeder` si no existe ya |
+| `SPRING_PROFILES_ACTIVE` | `prod` (por defecto) o `demo` |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Solo con `SPRING_PROFILES_ACTIVE=prod`: el OWNER real del gimnasio (mínimo 12 caracteres en la contraseña) |
+| `DEMO_OWNER_PASSWORD` / `DEMO_MEMBER_PASSWORD` | Solo con `SPRING_PROFILES_ACTIVE=demo`: contraseñas fuertes para los botones de demo (`openssl rand -base64 18`) |
+| `AI_LIMIT_*` (opcionales) | Límite de uso de la IA por socio/día y tope global diario; valores por defecto razonables si se dejan en blanco (ver `.env.prod.example`) |
 
-Con `SPRING_PROFILES_ACTIVE=prod` (lo fija `docker-compose.prod.yml`), `DevDataSeeder` nunca
-se ejecuta: no hay cuentas de demo, tarifas de ejemplo ni horario de ejemplo en producción.
-`ProductionAdminSeeder` crea el tenant único y el OWNER a partir de `ADMIN_EMAIL`/
-`ADMIN_PASSWORD` la primera vez; en arranques siguientes no toca nada si la cuenta ya existe.
+### Copias de seguridad y Actuator
 
-**Pendiente, fuera de alcance del Trozo 8a-1** (ver `docs/PROGRESS.md` para el detalle):
-copias de seguridad de Postgres, métricas con Actuator/Prometheus, Redis en producción, y un
-seeder o pantalla de administración para dar de alta las tarifas reales (sin tarifas, nadie
-puede registrarse: `ProductionAdminSeeder` solo crea el OWNER, no las tarifas).
+`scripts/backup-db.sh` (volcado comprimido, con fecha, conserva las últimas 7) y
+`scripts/restore-db.sh` (restaura, con confirmación escrita) — ver `docs/DEPLOY.md` para
+programarlos con cron. `/actuator/health` y `/actuator/metrics` del backend nunca son
+públicos (Caddy no los expone); se consultan desde dentro del servidor, ver `docs/DEPLOY.md`.
+
+### Límite de uso de la IA
+
+Por socio y por día según su tarifa (COMPLETA: 5 rutinas / 40 mensajes al asistente por
+defecto; ATLETA_PRO: más holgado), más un tope global diario para toda la aplicación (para no
+agotar el cupo gratuito del proveedor del LLM). Al superarlo, 429 con un mensaje claro en
+español ("Has alcanzado tu límite diario..." o, si es el tope global, "La demostración ha
+alcanzado su límite de IA de hoy, vuelve mañana"). Si Redis falla, la IA sigue funcionando
+igual (el límite simplemente no se aplica esa vez; se registra un aviso). Contadores en
+Redis (`AiUsageLimiter`), configurables por variable de entorno (ver tabla de arriba).
 
 ## Puertos
 

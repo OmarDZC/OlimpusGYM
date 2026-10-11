@@ -6,7 +6,10 @@
 
 encode gzip
 
-# La API del backend vive bajo /api/: todo lo demás es el frontend (Next.js).
+# La API del backend vive bajo /api/: todo lo demás es el frontend (Next.js). A propósito, no
+# hay ninguna ruta hacia /actuator/**: Actuator (salud y métricas, Trozo 8a-2) solo debe verse
+# desde dentro de la red interna de Docker, nunca en público. Ver "Backups y métricas" en
+# docs/DEPLOY.md para cómo consultarlo desde el propio servidor.
 handle /api/* {
 	reverse_proxy backend:8080
 }

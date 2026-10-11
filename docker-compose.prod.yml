@@ -1,5 +1,6 @@
-# Stack de producción (Trozo 8a-1): backend, servicio de IA, frontend, PostgreSQL normal (sin
-# pgvector: nada lo usa, ver docs/PROGRESS.md) y Caddy como único punto de entrada, con HTTPS
+# Stack de producción (Trozo 8a-1 y 8a-2): backend, servicio de IA, frontend, PostgreSQL
+# normal (sin pgvector: nada lo usa, ver docs/PROGRESS.md), Redis (con contraseña, solo para
+# el límite de uso de la IA, Trozo 8a-2) y Caddy como único punto de entrada, con HTTPS
 # automático (Let's Encrypt) cuando DOMAIN es un dominio real.
 #
 # Uso:
@@ -35,18 +36,51 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: prod
+      # "prod" (por defecto) para el despliegue real, o "demo" para la demo pública: mismo
+      # stack, mismo docker-compose.prod.yml, mismo Caddyfile. En "demo", el backend crea un
+      # OWNER y un socio de ejemplo con DEMO_OWNER_PASSWORD/DEMO_MEMBER_PASSWORD (no las
+      # cuentas de desarrollo); ADMIN_EMAIL/ADMIN_PASSWORD no hacen falta ahí. En "prod", al
+      # revés: ADMIN_EMAIL/ADMIN_PASSWORD sí son obligatorios y no hay cuentas de ejemplo.
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-gymflow}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-gymflow}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env.prod}
       GYMFLOW_JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env.prod (openssl rand -base64 48)}
       GYMFLOW_AI_BASE_URL: http://ai-service:8000
       GYMFLOW_CORS_ALLOWED_ORIGINS: ${PUBLIC_URL:?Define PUBLIC_URL en .env.prod}
-      GYMFLOW_ADMIN_EMAIL: ${ADMIN_EMAIL:?Define ADMIN_EMAIL en .env.prod}
-      GYMFLOW_ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Define ADMIN_PASSWORD en .env.prod (mínimo 12 caracteres)}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?Define REDIS_PASSWORD en .env.prod}
+      # Límite de uso de la IA (Trozo 8a-2): valores por defecto razonables en application.yml
+      # si no se definen aquí; se pueden ajustar sin tocar código con estas variables.
+      GYMFLOW_AI_LIMIT_COMPLETA_ROUTINES_PER_DAY: ${AI_LIMIT_COMPLETA_ROUTINES_PER_DAY:-5}
+      GYMFLOW_AI_LIMIT_COMPLETA_ASSISTANT_PER_DAY: ${AI_LIMIT_COMPLETA_ASSISTANT_PER_DAY:-40}
+      GYMFLOW_AI_LIMIT_ATLETA_PRO_ROUTINES_PER_DAY: ${AI_LIMIT_ATLETA_PRO_ROUTINES_PER_DAY:-10}
+      GYMFLOW_AI_LIMIT_ATLETA_PRO_ASSISTANT_PER_DAY: ${AI_LIMIT_ATLETA_PRO_ASSISTANT_PER_DAY:-80}
+      GYMFLOW_AI_LIMIT_GLOBAL_DAILY_CAP: ${AI_LIMIT_GLOBAL_DAILY_CAP:-500}
+      # Obligatorios solo en modo "prod" (el backend lo exige él mismo al arrancar si faltan).
+      GYMFLOW_ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      GYMFLOW_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Obligatorios solo en modo "demo" (igual, el backend lo exige él mismo si faltan).
+      DEMO_OWNER_PASSWORD: ${DEMO_OWNER_PASSWORD:-}
+      DEMO_MEMBER_PASSWORD: ${DEMO_MEMBER_PASSWORD:-}
     expose:
       - "8080"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Con contraseña (Trozo 8a-2) y sin publicar puerto: solo alcanzable desde la red interna.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Define REDIS_PASSWORD en .env.prod}"]
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?Define REDIS_PASSWORD en .env.prod}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   ai-service:
     build: ./ai-service

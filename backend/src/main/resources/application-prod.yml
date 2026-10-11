@@ -1,9 +1,0 @@
-# Solo para el perfil "prod" (docker-compose.prod.yml): Redis no está en el stack de
-# producción todavía (a propósito, Trozo 8a-1), pero spring-boot-starter-data-redis sigue en
-# el classpath y Spring Boot añade solo un indicador de salud de Redis a /actuator/health. Sin
-# esto, ese endpoint devolvía 503 aunque el backend funcionara bien en todo lo demás —
-# descubierto probando el healthcheck de verdad contra el stack de producción real.
-management:
-  health:
-    redis:
-      enabled: false

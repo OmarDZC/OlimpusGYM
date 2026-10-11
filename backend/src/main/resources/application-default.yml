@@ -1,0 +1,9 @@
+# Perfil implícito de Spring cuando no hay ninguno activo (la mayoría de los @SpringBootTest
+# sin @ActiveProfiles, también en la CI real: ese job no levanta ningún Redis para el
+# backend). Ahí no hay Redis de verdad, así que el indicador de salud de Redis se desactiva
+# solo en este caso exacto. dev/prod/demo activan siempre un perfil explícito (nunca
+# "default"), así que ahí el indicador sigue funcionando normal con el Redis real.
+management:
+  health:
+    redis:
+      enabled: false
