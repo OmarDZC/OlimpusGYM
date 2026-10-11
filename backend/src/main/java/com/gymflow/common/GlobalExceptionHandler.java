@@ -1,5 +1,6 @@
 package com.gymflow.common;
 
+import com.gymflow.ai.AiUsageLimitExceededException;
 import com.gymflow.assistant.AssistantNotAllowedException;
 import com.gymflow.assistant.ai.AssistantFailedException;
 import com.gymflow.assistant.ai.AssistantUnavailableException;
@@ -107,6 +108,13 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleTooManyContactAttempts(TooManyContactAttemptsException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
         problem.setTitle("Demasiados envíos");
+        return problem;
+    }
+
+    @ExceptionHandler(AiUsageLimitExceededException.class)
+    public ProblemDetail handleAiUsageLimitExceeded(AiUsageLimitExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+        problem.setTitle("Límite de uso de la IA alcanzado");
         return problem;
     }
 }

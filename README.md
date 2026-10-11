@@ -159,11 +159,11 @@ También corren en GitHub Actions (job `e2e` de la CI) contra el mismo `docker c
 ## Despliegue en producción
 
 `docker-compose.prod.yml` (Trozo 8a-1 y 8a-2): backend, servicio de IA, frontend, PostgreSQL
-normal (sin pgvector — nada lo usa todavía, ver `docs/PROGRESS.md`) y Caddy como único punto
-de entrada, con HTTPS automático (Let's Encrypt) cuando `DOMAIN` es un dominio real. Solo
-Caddy publica puertos (80 y 443); el resto de servicios solo son alcanzables entre sí, por la
-red interna de Docker Compose. Sin Redis todavía (a propósito: no aporta nada que el MVP
-necesite ahora mismo) ni backups ni métricas (quedan para el Trozo 8a-2, commit 2).
+normal (sin pgvector — nada lo usa todavía, ver `docs/PROGRESS.md`), Redis (con contraseña,
+solo para el límite de uso de la IA) y Caddy como único punto de entrada, con HTTPS
+automático (Let's Encrypt) cuando `DOMAIN` es un dominio real. Solo Caddy publica puertos (80
+y 443); el resto de servicios solo son alcanzables entre sí, por la red interna de Docker
+Compose. Guía completa paso a paso para un VPS Ubuntu en `docs/DEPLOY.md`.
 
 ```bash
 cp .env.prod.example .env.prod   # y rellena los valores reales, nunca los de ejemplo
@@ -194,16 +194,30 @@ inválidas, ver `ProductionSecretsValidator`):
 | `DOMAIN` | Dominio real para HTTPS automático, o una IP / `:80` para una primera prueba en HTTP |
 | `PUBLIC_URL` | URL pública completa con esquema (`https://...` o `http://...`), coherente con `DOMAIN`: el frontend la hornea en el bundle del navegador en tiempo de build, y es el único origen que admite CORS |
 | `POSTGRES_PASSWORD` | Sin valor de ejemplo: ponlo tú |
+| `REDIS_PASSWORD` | Sin valor de ejemplo: ponlo tú (`openssl rand -base64 24`) |
 | `JWT_SECRET` | Mínimo 32 caracteres, aleatorio y distinto del valor de ejemplo del repo (`openssl rand -base64 48`) |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | El mismo proveedor compatible con OpenAI que en desarrollo (ver más arriba) |
 | `SPRING_PROFILES_ACTIVE` | `prod` (por defecto) o `demo` |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Solo con `SPRING_PROFILES_ACTIVE=prod`: el OWNER real del gimnasio (mínimo 12 caracteres en la contraseña) |
 | `DEMO_OWNER_PASSWORD` / `DEMO_MEMBER_PASSWORD` | Solo con `SPRING_PROFILES_ACTIVE=demo`: contraseñas fuertes para los botones de demo (`openssl rand -base64 18`) |
+| `AI_LIMIT_*` (opcionales) | Límite de uso de la IA por socio/día y tope global diario; valores por defecto razonables si se dejan en blanco (ver `.env.prod.example`) |
 
-**Pendiente, fuera de alcance del Trozo 8a-2 (commit 1)** (ver `docs/PROGRESS.md` para el
-detalle): copias de seguridad de Postgres, métricas con Actuator/Prometheus, Redis en
-producción y límite de uso de la IA, y la guía `docs/DEPLOY.md` para un VPS (llegan en el
-commit 2).
+### Copias de seguridad y Actuator
+
+`scripts/backup-db.sh` (volcado comprimido, con fecha, conserva las últimas 7) y
+`scripts/restore-db.sh` (restaura, con confirmación escrita) — ver `docs/DEPLOY.md` para
+programarlos con cron. `/actuator/health` y `/actuator/metrics` del backend nunca son
+públicos (Caddy no los expone); se consultan desde dentro del servidor, ver `docs/DEPLOY.md`.
+
+### Límite de uso de la IA
+
+Por socio y por día según su tarifa (COMPLETA: 5 rutinas / 40 mensajes al asistente por
+defecto; ATLETA_PRO: más holgado), más un tope global diario para toda la aplicación (para no
+agotar el cupo gratuito del proveedor del LLM). Al superarlo, 429 con un mensaje claro en
+español ("Has alcanzado tu límite diario..." o, si es el tope global, "La demostración ha
+alcanzado su límite de IA de hoy, vuelve mañana"). Si Redis falla, la IA sigue funcionando
+igual (el límite simplemente no se aplica esa vez; se registra un aviso). Contadores en
+Redis (`AiUsageLimiter`), configurables por variable de entorno (ver tabla de arriba).
 
 ## Puertos
 

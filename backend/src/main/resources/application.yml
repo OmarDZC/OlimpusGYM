@@ -25,6 +25,12 @@ spring:
     redis:
       host: localhost
       port: 6379
+      # Cortos a propósito (Trozo 8a-2): si Redis no responde, el límite de uso de la IA debe
+      # fallar rápido y dejar pasar la petición (ver AiUsageLimiter), no dejar al socio
+      # esperando segundos por una conexión que no va a llegar. Probado de verdad parando el
+      # contenedor de Redis con el stack de producción real arriba.
+      connect-timeout: 300ms
+      timeout: 300ms
 
 server:
   port: 8080
@@ -37,7 +43,11 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        # Solo salud y métricas básicas (Trozo 8a-2): nada de "info" ni de un formato más
+        # detallado tipo Prometheus, que no hace falta todavía. Caddy nunca expone /actuator/**
+        # al público (ver Caddyfile: solo /api/* va al backend, lo demás al frontend), así que
+        # esto solo es alcanzable desde dentro de la red interna de Docker o con un túnel SSH.
+        include: health,metrics
   endpoint:
     health:
       probes:
@@ -49,6 +59,20 @@ gymflow:
     expiration-minutes: 60
   ai:
     base-url: ${GYMFLOW_AI_BASE_URL:http://localhost:8000}
+    limits:
+      # Límite de uso de la IA por socio y día (Trozo 8a-2, LOGIC.md §6/§7): BÁSICA no tiene
+      # IA (su tarifa lo bloquea antes de llegar al límite), así que solo hacen falta valores
+      # para COMPLETA y ATLETA_PRO (más holgado). Configurable por variable de entorno para
+      # poder ajustar la demo pública sin tocar código.
+      completa:
+        routines-per-day: ${GYMFLOW_AI_LIMIT_COMPLETA_ROUTINES_PER_DAY:5}
+        assistant-messages-per-day: ${GYMFLOW_AI_LIMIT_COMPLETA_ASSISTANT_PER_DAY:40}
+      atleta-pro:
+        routines-per-day: ${GYMFLOW_AI_LIMIT_ATLETA_PRO_ROUTINES_PER_DAY:10}
+        assistant-messages-per-day: ${GYMFLOW_AI_LIMIT_ATLETA_PRO_ASSISTANT_PER_DAY:80}
+      # Tope diario para toda la aplicación (todas las tarifas y funciones juntas), para no
+      # agotar el cupo gratuito del proveedor del LLM si la demo pública recibe mucho tráfico.
+      global-daily-cap: ${GYMFLOW_AI_LIMIT_GLOBAL_DAILY_CAP:500}
   cors:
     # Orígenes del frontend con permiso de llamar a la API (coma-separados). En despliegue,
     # cambia esto a la URL pública real del frontend.

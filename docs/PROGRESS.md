@@ -13,6 +13,131 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 8a-2 (commit 2 de 2) - Producción: seguridad operativa y límite de IA (2026-10-11)
+- Hecho:
+  - **Copias de seguridad**: `scripts/backup-db.sh` (`pg_dump -Fc`, formato "custom",
+    comprimido de por sí, con la fecha en el nombre, conserva solo las últimas 7) y
+    `scripts/restore-db.sh` (`pg_restore --clean --if-exists`, funciona igual si el destino
+    está vacío o ya tiene datos; pide escribir "RESTAURAR" antes de nada, salvo `--yes`).
+    Instrucciones de cron en el propio script y en `docs/DEPLOY.md`.
+  - **Actuator restringido**: `management.endpoints.web.exposure.include: health,metrics`
+    (antes también `info` y `prometheus`, sin usarse realmente: no hay
+    `micrometer-registry-prometheus` en el classpath). `SecurityConfig` solo deja pasar sin
+    autenticación `/actuator/health/**` y `/actuator/metrics/**`; cualquier otra ruta de
+    Actuator (`/actuator/env`, `/actuator/info`...) da 403. Nunca públicos de verdad: el
+    `Caddyfile` no tiene ninguna ruta hacia `/actuator/**` (solo `/api/*` va al backend, todo
+    lo demás al frontend), así que solo son alcanzables desde dentro de la red interna de
+    Docker o con un túnel SSH (documentado en `docs/DEPLOY.md`).
+  - **Redis en `docker-compose.prod.yml`**: con contraseña (`REDIS_PASSWORD`, obligatoria),
+    sin puerto publicado (solo `expose`), healthcheck con `redis-cli -a ... ping`. Al estar
+    Redis presente de verdad, se quitaron `application-prod.yml` y `application-demo.yml`
+    (desactivaban el indicador de salud de Redis cuando no estaba en el stack, Trozo 8a-1/
+    8a-2 commit 1): ya no hace falta, `/actuator/health` vuelve a comprobarlo de verdad.
+  - **Límite de uso de la IA** (`AiUsageLimiter`, nuevo): por socio y por día según su
+    tarifa (BÁSICA no tiene IA, no le aplica ningún límite: su tarifa ya bloquea antes de
+    llegar aquí), con contadores en Redis (`INCR` + expiración a las 26 h, para que la clave
+    muera sola). Por defecto, configurable por variable de entorno:
+    COMPLETA 5 rutinas / 40 mensajes de asistente al día; ATLETA_PRO 10 rutinas / 80
+    mensajes. Más un **tope global diario único** para toda la aplicación (rutinas y
+    mensajes juntos, todas las tarifas: es el cupo del proveedor del LLM el que hay que
+    proteger), 500 por defecto. Se comprueba el cupo del socio antes que el global (si el
+    socio ya no tiene cupo, ni se mira el global). Al superarse cualquiera de los dos, 429
+    con un mensaje claro en español llano ("Has alcanzado tu límite diario de uso de la
+    IA..." o, el global, "La demostración ha alcanzado su límite de IA de hoy, vuelve
+    mañana"); el frontend ya lo muestra sin jerga porque reutiliza el manejo genérico de
+    `ApiError` que ya tenían `/entrenador-ia` y el chat del asistente (ningún cambio de
+    frontend hizo falta para esto). Integrado en `WorkoutService.generate()` y
+    `AssistantService.chat()`, justo después de comprobar que la tarifa incluye esa función
+    de IA.
+  - **Si Redis falla, la IA sigue funcionando**: `AiUsageLimiter.checkAndRecordUsage()`
+    atrapa cualquier error de Redis, registra un aviso (`WARN`) y deja pasar la petición sin
+    lanzar nada. Con el cliente de Redis por defecto (sin límite de tiempo corto), un Redis
+    caído tardaba **varios segundos** en darse por vencido (confirmado de verdad parando el
+    contenedor de Redis con el stack real arriba: una petición tardó más de 30 segundos).
+    Arreglado con `spring.data.redis.connect-timeout`/`timeout: 300ms`: con Redis realmente
+    caído, la misma petición pasa a tardar **0,5 segundos** en total (confirmado otra vez con
+    el stack real, `time curl`).
+  - Tests nuevos: `AiUsageLimiterTest` (Testcontainers con un Redis real de verdad y reloj
+    controlado: el límite se aplica por socio, no se comparte entre socios distintos, ATLETA_PRO
+    tiene más cupo que COMPLETA, se reinicia al día siguiente, el tope global bloquea aunque
+    sean socios distintos, y un Redis roto de verdad —apuntando a un puerto cerrado— no
+    impide la petición). `ActuatorHttpTest` (health y metrics sin autenticación, cualquier
+    otra ruta de Actuator da 403).
+  - **`docs/DEPLOY.md`** (nuevo): guía completa paso a paso para un VPS Ubuntu, para alguien
+    que nunca ha desplegado nada: crear el servidor, usuario sin privilegios de root,
+    firewall (`ufw`, solo 22/80/443), instalar Docker, clonar el repositorio, crear
+    `.env.prod`, apuntar el dominio, arrancar el stack, comprobarlo, backups y (si aplica)
+    reinicio de demo por cron, cómo actualizar con `git pull`, y una lista de comprobación
+    final.
+- Hecho con el stack real (`docker-compose.prod.yml`, valores de prueba, nunca commiteados):
+  - `docker compose -f docker-compose.prod.yml --env-file .env.prod config`: válido con
+    Redis añadido.
+  - Los 6 servicios (antes 5) llegan a `healthy`, Redis incluido.
+  - `/actuator/health` desde dentro del contenedor del backend (`docker exec ... curl`): 200,
+    `{"status":"UP",...}`, con Redis sano. `/actuator/metrics`: 200 sin cabecera de
+    autorización. `/actuator/info` y `/actuator/env`: 403. A través de Caddy
+    (`curl http://localhost/actuator/health`, puerto público): 404 — nunca llega al backend.
+  - **Copias de seguridad probadas de verdad**: `backup-db.sh` creó un volcado real; probada
+    la rotación generando 11 copias a mano (con fechas distintas) y comprobando que, tras la
+    siguiente copia, solo quedaban las 7 más recientes. **Restauración probada de verdad en
+    una base de datos vacía**: se levantó un contenedor Postgres nuevo, sin ningún dato, aparte
+    del stack (misma red de Docker); se restauró el volcado con `pg_restore` ahí: los 15
+    usuarios, 1 tenant, 3 tarifas y 13 reservas del origen aparecieron exactamente igual.
+    También se ejecutó `restore-db.sh` tal cual (con `--yes`) contra la base de datos real
+    del stack, sin errores.
+  - **Límite de uso de la IA probado de verdad**: con límites bajos de prueba por variable de
+    entorno (1-3 según la función), entrando como el socio de demo (Carlos, ATLETA_PRO) y
+    llamando a `POST /me/workout/generate` repetidas veces: los primeros intentos (dentro del
+    cupo) llegaron a la IA (fallaron con 503 por no haber un LLM real configurado en esta
+    máquina, un fallo distinto y esperado); el intento que superaba el cupo del socio dio
+    **429** con el mensaje exacto `"Has alcanzado tu límite diario de uso de la IA. Vuelve a
+    intentarlo mañana."`, sin llegar a llamar al servicio de IA. Comprobadas las claves y
+    valores en Redis directamente (`redis-cli ... get`): el contador del socio quedó en 3 (se
+    incrementa incluso en el intento que bloquea) y el global en 2 (el global no se toca si ya
+    bloqueó el límite del socio), con un TTL de unas 26 horas, tal como se diseñó.
+  - **Fallo de Redis probado de verdad**: parado el contenedor de Redis a mitad de prueba, una
+    llamada a `/me/workout/generate` siguió respondiendo (503 por el LLM, no por el límite),
+    con el aviso esperado en el log del backend
+    (`AiUsageLimiter: No se pudo comprobar el límite de uso de la IA en Redis: la petición se
+    deja pasar.`). Al arrancar Redis de nuevo, Lettuce reconectó solo en segundos y
+    `/actuator/health` volvió a `UP`.
+  - `mvn test` (sin Docker en esta máquina, mismo límite de siempre): 120 tests, 0 fallos, 0
+    errores, 101 omitidos (incluidos los 9 nuevos de este commit, verificados de verdad contra
+    el stack real arriba y que correrán también en la CI real).
+- Decisiones / simplificaciones:
+  - El tope global es **uno solo para toda la aplicación** (rutinas y mensajes del asistente
+    juntos), no uno por función: lo que hay que proteger es el cupo del proveedor del LLM en
+    conjunto, no cada función por separado.
+  - Si una petición supera el límite del propio socio, su contador ya quedó incrementado (no
+    se "devuelve" el intento) y el contador global no se toca (la petición nunca llegó a
+    intentarse de verdad). Es la opción más simple dado el alcance de este MVP; en una
+    aplicación con más tráfico real valdría la pena decrementar el contador del socio para no
+    "gastarle" un intento que nunca sucedió.
+  - `application-prod.yml`/`application-demo.yml` se borraron en vez de dejarlos vacíos: con
+    Redis presente de verdad en ambos perfiles, no había nada que esos archivos necesitaran
+    seguir desactivando.
+  - El tiempo de conexión/comando de Redis se fijó corto (300 ms) a propósito, también para
+    desarrollo (mismo `application.yml`): un valor tan corto nunca debería notarse con Redis
+    sano (la red de Docker Compose es local), y evita que un Redis caído en producción se
+    note como una web lenta en vez de como "la IA funciona igual, solo sin el límite".
+- Pendiente: nada de lo pedido en este trozo. Quedan, fuera de alcance (ver
+  `docs/ROADMAP.md`, "Pendiente antes de lanzar"): sesión de pruebas manual completa,
+  despliegue real en un VPS siguiendo esta guía, medir rendimiento con Lighthouse, decidir el
+  modelo de IA real para la demo pública, README final con capturas/vídeo, y la limpieza del
+  historial de git antes de hacer público el repositorio.
+- Cómo probarlo:
+  - `mvn test` (backend; con Docker real los 9 tests nuevos dejan de omitirse).
+  - Backups: `./scripts/backup-db.sh .env.prod` y, para probar una restauración,
+    `./scripts/restore-db.sh backups/el-archivo.dump .env.prod`.
+  - Límite de IA: entrar como un socio con tarifa COMPLETA o ATLETA_PRO y generar rutinas o
+    hablar con el asistente más veces que el límite configurado; la respuesta 429 debería
+    aparecer en el frontend como un mensaje de error normal, sin jerga.
+  - Despliegue guiado completo: seguir `docs/DEPLOY.md` de principio a fin en un VPS real.
+- Tests: `mvn test` → BUILD SUCCESS, 120 tests, 0 fallos, 0 errores (101 omitidos por falta de
+  Docker en esta máquina, incluidos los 9 nuevos, verificados aparte contra el stack real).
+
+---
+
 ### Trozo 8a-2 (commit 1 de 2) - Producción: datos, modo demo (2026-10-11)
 - Hecho:
   - **Datos de negocio siempre presentes, en todos los perfiles**: `BusinessDataSeeder`
