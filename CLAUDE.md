@@ -59,6 +59,26 @@ GymFlow: plataforma SaaS para gimnasios, proyecto de portfolio de un programador
   rama ni PR aparte.
 - El historial ya existente (commits directos a `main` de antes de esta regla) no se reescribe
   todavía: esto aplica desde ahora en adelante.
+- **El flujo completo (rama, pull request, CI y squash) lo haces tú solo, sin preguntar**,
+  usando `gh` si está disponible o la API de GitHub con el token del credential helper de git
+  si no (`git credential fill`; nunca imprimas el token). Si un check de CI falla, averigua la
+  causa real con la salida mínima necesaria (el check que falla y las últimas ~60 líneas del
+  job, no el log entero), arréglalo en la misma rama (commit nuevo de tipo `fix:`) y reintenta.
+  Solo te paras a preguntar si la misma pull request falla dos veces por causas distintas.
+
+## Reglas de ahorro (uso limitado del plan)
+
+- Sin navegador ni capturas de pantalla salvo que un fallo no se pueda comprobar de otra
+  forma (tests y `curl` primero).
+- Lee solo los archivos que necesites para la tarea concreta; no releas documentación entera
+  "por si acaso".
+- Durante el desarrollo, ejecuta solo los tests del área que estás tocando; la suite completa
+  (backend + frontend) una sola vez, al final.
+- Si la tarea usa el LLM real (no el simulado de los tests), manténlo a un puñado de llamadas
+  en total, espaciadas para no chocar con límites de cuota.
+- Informe final corto (unas 15 líneas): qué se arregló, la causa real de cada fallo (no la
+  sospechada si resultó ser otra), qué se verificó y qué no. Sin documentos nuevos aparte de
+  una entrada breve en `docs/PROGRESS.md`.
 
 ## Comandos
 
