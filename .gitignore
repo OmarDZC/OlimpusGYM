@@ -1,5 +1,7 @@
 # Secrets
 .env
+.env.prod
+.env.*.local
 *.pem
 
 # OS / IDE

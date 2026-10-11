@@ -27,20 +27,6 @@ services:
       timeout: 3s
       retries: 10
 
-  rabbitmq:
-    image: rabbitmq:3-management-alpine
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-gymflow}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-gymflow}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
   backend:
     build: ./backend
     depends_on:
@@ -48,17 +34,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-gymflow}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-gymflow}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-gymflow}
       SPRING_DATA_REDIS_HOST: redis
-      SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-gymflow}
-      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-gymflow}
       GYMFLOW_JWT_SECRET: ${JWT_SECRET:-change-me-change-me-change-me-change-me-32b}
       GYMFLOW_AI_BASE_URL: http://ai-service:8000
     ports:

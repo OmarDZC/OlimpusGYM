@@ -4,7 +4,7 @@ Plataforma SaaS para gimnasios: socios y tarifas, reservas de clases con control
 
 Documentación del proyecto en `docs/`: `PROJECT_BRIEF.md` (alcance y decisiones), `LOGIC.md` (reglas y API), `DESIGN.md` (estilo), `ROADMAP.md` (orden de construcción) y `design/` (pantallas de referencia).
 
-> Estado: **Trozo 1 completado (autenticación y roles)**. Mira `docs/PROGRESS.md` para el detalle y `docs/ROADMAP.md` para el orden de construcción.
+> Estado: ver `docs/PROGRESS.md` para el detalle de cada trozo completado y `docs/ROADMAP.md` para el orden de construcción.
 
 ## Cómo está montado
 
@@ -14,8 +14,10 @@ gymflow/
 ├── ai-service/     FastAPI (Python): entrenador, asistente de reservas, RAG
 ├── frontend/       Next.js + TypeScript + Tailwind: panel del gimnasio y app del socio
 ├── docs/           Roadmap y decisiones de arquitectura
-├── docker-compose.yml   Une todo: Postgres (pgvector), Redis, RabbitMQ, los 3 servicios
-├── .env.example    Variables de entorno (copiar a .env)
+├── docker-compose.yml       Desarrollo: Postgres (pgvector), Redis, los 3 servicios
+├── docker-compose.prod.yml Producción: Postgres, Caddy (HTTPS automático), los 3 servicios
+├── .env.example    Variables de entorno de desarrollo (copiar a .env)
+├── .env.prod.example  Variables de entorno de producción (copiar a .env.prod)
 └── Makefile        Atajos (make infra, make up, make backend-test...)
 ```
 
@@ -24,8 +26,7 @@ Cada carpeta es un servicio independiente con su propio `Dockerfile`. El `docker
 ```
 Navegador ──> frontend (3000) ──> backend Spring (8080) ──> PostgreSQL / Redis
                                         │
-                                        ├──REST──> ai-service FastAPI (8000) ──> LLM (Ollama/Groq/Gemini...)
-                                        └──RabbitMQ (tareas pesadas, Fase 3+)
+                                        └──REST──> ai-service FastAPI (8000) ──> LLM (Ollama/Groq/Gemini...)
 ```
 
 - **Multi-tenancy:** una sola base de datos con `tenant_id` en cada tabla de negocio.
@@ -42,7 +43,7 @@ Navegador ──> frontend (3000) ──> backend Spring (8080) ──> PostgreS
 
 ```bash
 cp .env.example .env
-make infra          # Postgres, Redis y RabbitMQ
+make infra          # Postgres y Redis
 ```
 
 Después, cada servicio por separado en su terminal:
@@ -117,8 +118,10 @@ rápido sin memorizarla.
 | STAFF | `marta@olympusgym.test` / `dani@olympusgym.test` | `Demo1234!` | Entrenadores de ejemplo |
 | MEMBER | `carlos@olympusgym.test` y 11 socios más | `Demo1234!` | Ver `DevDataSeeder` para la lista completa y sus tarifas |
 
-En producción (Trozo 8, pendiente) el administrador real se crea con las variables de entorno
-`ADMIN_EMAIL` y `ADMIN_PASSWORD` y una contraseña fuerte, no con estas credenciales de demo.
+En producción el seed de dev/demo no se ejecuta nunca (`DevDataSeeder` está limitado a esos dos
+perfiles): estas cuentas no existen fuera de desarrollo. El administrador real se crea con
+`ProductionAdminSeeder` a partir de `ADMIN_EMAIL` y `ADMIN_PASSWORD` (ver
+"Despliegue en producción" más abajo).
 
 ## Tests
 
@@ -136,7 +139,7 @@ cancelada, y que el socio reserve hablando con el asistente y confirmando la pro
 en `e2e/`, aparte de `frontend/` (no son parte del build de Next.js).
 
 ```bash
-docker compose up -d postgres redis rabbitmq backend frontend   # escenarios sin IA
+docker compose up -d postgres redis backend frontend   # escenarios sin IA
 cd e2e && npm install && npx playwright install --with-deps chromium
 npx playwright test
 ```
@@ -147,11 +150,47 @@ proveedor real — ver `docker-compose.e2e.yml`:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build \
-  postgres redis rabbitmq backend ai-service frontend fake-llm
+  postgres redis backend ai-service frontend fake-llm
 cd e2e && npx playwright test
 ```
 
 También corren en GitHub Actions (job `e2e` de la CI) contra el mismo `docker compose`.
+
+## Despliegue en producción
+
+`docker-compose.prod.yml` (Trozo 8a-1): backend, servicio de IA, frontend, PostgreSQL normal
+(sin pgvector — nada lo usa todavía, ver `docs/PROGRESS.md`) y Caddy como único punto de
+entrada, con HTTPS automático (Let's Encrypt) cuando `DOMAIN` es un dominio real. Solo Caddy
+publica puertos (80 y 443); el resto de servicios solo son alcanzables entre sí, por la red
+interna de Docker Compose. Sin Redis todavía (a propósito: no aporta nada que el MVP necesite
+ahora mismo) ni backups ni métricas (quedan para una siguiente vuelta del Trozo 8).
+
+```bash
+cp .env.prod.example .env.prod   # y rellena los valores reales, nunca los de ejemplo
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+```
+
+Variables obligatorias en `.env.prod` (el backend se niega a arrancar si faltan o son
+inválidas, ver `ProductionSecretsValidator`):
+
+| Variable | Para qué |
+|---|---|
+| `DOMAIN` | Dominio real para HTTPS automático, o una IP / `:80` para una primera prueba en HTTP |
+| `PUBLIC_URL` | URL pública completa con esquema (`https://...` o `http://...`), coherente con `DOMAIN`: el frontend la hornea en el bundle del navegador en tiempo de build, y es el único origen que admite CORS |
+| `POSTGRES_PASSWORD` | Sin valor de ejemplo: ponlo tú |
+| `JWT_SECRET` | Mínimo 32 caracteres, aleatorio y distinto del valor de ejemplo del repo (`openssl rand -base64 48`) |
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | El mismo proveedor compatible con OpenAI que en desarrollo (ver más arriba) |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | El OWNER real del gimnasio (mínimo 12 caracteres en la contraseña); lo crea `ProductionAdminSeeder` si no existe ya |
+
+Con `SPRING_PROFILES_ACTIVE=prod` (lo fija `docker-compose.prod.yml`), `DevDataSeeder` nunca
+se ejecuta: no hay cuentas de demo, tarifas de ejemplo ni horario de ejemplo en producción.
+`ProductionAdminSeeder` crea el tenant único y el OWNER a partir de `ADMIN_EMAIL`/
+`ADMIN_PASSWORD` la primera vez; en arranques siguientes no toca nada si la cuenta ya existe.
+
+**Pendiente, fuera de alcance del Trozo 8a-1** (ver `docs/PROGRESS.md` para el detalle):
+copias de seguridad de Postgres, métricas con Actuator/Prometheus, Redis en producción, y un
+seeder o pantalla de administración para dar de alta las tarifas reales (sin tarifas, nadie
+puede registrarse: `ProductionAdminSeeder` solo crea el OWNER, no las tarifas).
 
 ## Puertos
 
@@ -162,5 +201,4 @@ También corren en GitHub Actions (job `e2e` de la CI) contra el mismo `docker c
 | ai-service | 8000   |
 | PostgreSQL | 5432   |
 | Redis      | 6379   |
-| RabbitMQ   | 5672 (UI en 15672) |
 | Ollama     | 11434  |

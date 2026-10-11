@@ -1,7 +1,7 @@
 .PHONY: help up down infra logs backend-test ai-test e2e front-dev clean
 
 help:
-	@echo "make infra         - levanta solo postgres, redis y rabbitmq"
+	@echo "make infra         - levanta solo postgres y redis"
 	@echo "make up            - levanta todo con docker compose (build incluido)"
 	@echo "make down          - para todo"
 	@echo "make logs          - logs de todos los servicios"
@@ -12,7 +12,7 @@ help:
 	@echo "make clean         - para todo y borra volúmenes (borra la BD!)"
 
 infra:
-	docker compose up -d postgres redis rabbitmq
+	docker compose up -d postgres redis
 
 up:
 	docker compose up --build -d

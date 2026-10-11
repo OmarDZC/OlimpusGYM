@@ -3,7 +3,7 @@
 # del asistente sin depender de un proveedor externo ni de sus costes/latencia.
 #
 # Uso: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build \
-#        postgres redis rabbitmq backend ai-service frontend fake-llm
+#        postgres redis backend ai-service frontend fake-llm
 
 services:
   fake-llm:

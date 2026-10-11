@@ -13,6 +13,164 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 8a-1 - Producción: lo esencial (2026-10-11)
+- Hecho:
+  - **RabbitMQ quitado por completo**: nada lo usaba (ni `@RabbitListener` ni `RabbitTemplate`
+    en todo el backend, confirmado buscando en `backend/src`; `LOGIC.md` §9 ya lo marcaba como
+    "solo si aporta algo claro, no obligatorio"). Fuera de `docker-compose.yml` (servicio,
+    `depends_on`, variables de entorno del backend), `backend/pom.xml`
+    (`spring-boot-starter-amqp`), `backend/src/main/resources/application.yml`
+    (`spring.rabbitmq.*`), `.env.example`, `Makefile`, `README.md`, `CLAUDE.md` y
+    `.github/workflows/ci.yml` (el job de e2e lo traía en la lista de servicios a levantar;
+    sin este cambio, ese comando habría fallado con "no such service: rabbitmq" al no existir
+    ya en `docker-compose.yml`). Redis se queda, a propósito: nada lo usa tampoco todavía (el
+    límite de envíos del formulario de contacto sigue en memoria, `ContactRateLimiter.java`),
+    pero no lo pedía este trozo y puede que sí aporte algo más adelante (caché, límites
+    compartidos entre varias instancias).
+  - **pgvector**: tampoco lo usa nadie (sin `CREATE EXTENSION vector`, sin columnas `vector` en
+    ninguna migración de Flyway, sin nada de embeddings/RAG en `ai-service`). El
+    `docker-compose.yml` de desarrollo se deja con la imagen `pgvector/pgvector:pg16` tal cual
+    estaba (no lo pedía este trozo, y cambiarla no aporta nada en dev); `docker-compose.prod.yml`
+    usa `postgres:16-alpine`, la imagen normal, documentado en el propio archivo y en el README.
+  - **Dockerfiles con healthcheck y usuario sin privilegios**: backend (ya era multi-etapa con
+    JRE y usuario `gymflow`, se le añadió `HEALTHCHECK` contra `/actuator/health` con `curl`,
+    ya incluido en la imagen base `eclipse-temurin:21-jre`), ai-service (ya tenía usuario sin
+    privilegios; `HEALTHCHECK` con un `python -c` de una línea contra `/health`, sin instalar
+    nada nuevo: ya usa la librería estándar), frontend (ya generaba salida `standalone` de
+    Next.js; se le añadió `USER node` —el usuario que ya trae de serie la imagen oficial, no
+    hizo falta crear uno— y `HEALTHCHECK` con `wget` contra `127.0.0.1:3000` — **no
+    `localhost`**: dentro del contenedor "localhost" resuelve primero a `::1` (IPv6) y el
+    healthcheck fallaba con "Connection refused" aunque el servidor respondiera bien por
+    IPv4, un fallo real que solo se vio al probar las imágenes de verdad, no al leer el
+    Dockerfile). Ninguna imagen lleva secretos dentro: todo llega por variables de entorno en
+    tiempo de arranque.
+  - **`docker-compose.prod.yml`**: backend, ai-service, frontend, PostgreSQL y Caddy
+    (`caddy:2-alpine`) como proxy inverso. Solo Caddy publica puertos (80 y 443); el resto solo
+    tiene `expose` (alcanzables entre sí por la red interna, no desde el host). Volúmenes con
+    nombre para Postgres (`pgdata_prod`) y Caddy (`caddy_data`, `caddy_config`).
+    `restart: unless-stopped` en todos los servicios. Variables obligatorias
+    (`POSTGRES_PASSWORD`, `JWT_SECRET`, `PUBLIC_URL`, `LLM_*`, `ADMIN_EMAIL`,
+    `ADMIN_PASSWORD`) usan la sintaxis `${VAR:?mensaje}` de Compose: sin ellas, `docker compose
+    config`/`up` falla con un mensaje claro en vez de arrancar con un valor por defecto
+    inseguro.
+  - **`Caddyfile`**: lee el dominio de `{$DOMAIN}` (variable de entorno del contenedor de
+    Caddy). Con un dominio real, Caddy pide y renueva solo el certificado (Let's Encrypt); con
+    una IP o `:80` (el valor por defecto si no se define `DOMAIN`), sirve en HTTP sin intentar
+    HTTPS — así se puede probar el stack antes de tener un dominio, verificado de verdad (ver
+    "Hecho con el stack real" más abajo). Dos rutas: `/api/*` al backend, todo lo demás al
+    frontend.
+  - **`.env.prod.example`**: nunca valores reales. `DOMAIN` y `PUBLIC_URL` van separados a
+    propósito (uno es el host/IP que ve Caddy, el otro la URL completa con esquema que
+    necesitan el frontend en build y CORS en el backend) para no tener que asumir que el
+    esquema siempre es `https://`.
+  - **El backend se niega a arrancar fuera de dev/demo** si `JWT_SECRET` falta, mide menos de
+    32 caracteres o es exactamente el valor de ejemplo del repo (`ProductionSecretsValidator`,
+    `@Profile("!dev & !demo")`, `@PostConstruct`). Verificado de verdad arrancando el backend
+    de producción con el secreto de ejemplo: falla con
+    `IllegalStateException: GYMFLOW_JWT_SECRET sigue siendo el valor de ejemplo del
+    repositorio...` y no llega a levantar el puerto.
+  - **`ProductionAdminSeeder`** (`@Profile("!dev & !demo")`, igual que `ProductionSecretsValidator`
+    y lo contrario de `DevDataSeeder`, que es `@Profile({"dev","demo"})`): crea el tenant único
+    si no existe y, si no hay ya un usuario con el correo de `ADMIN_EMAIL`, lo da de alta como
+    OWNER con `ADMIN_PASSWORD` (mínimo 12 caracteres, si no, tampoco arranca). Idempotente: en
+    el siguiente arranque, si la cuenta ya existe, no hace nada (verificado reiniciando el
+    contenedor de verdad).
+  - **CORS y cabeceras para HTTPS**: `GYMFLOW_CORS_ALLOWED_ORIGINS` (ya existía, parametrizado
+    desde el Trozo 7b) se fija a `PUBLIC_URL` en producción: solo ese origen exacto. Se añadió
+    `server.forward-headers-strategy: framework`: detrás de Caddy, la petición le llega al
+    backend en HTTP plano aunque el navegador use HTTPS (Caddy manda `X-Forwarded-Proto` de
+    serie), y sin esto `request.isSecure()` daría `false` y la cabecera HSTS de Spring Security
+    (activa por defecto, igual que `X-Content-Type-Options`, `X-Frame-Options: DENY` y demás:
+    `SecurityConfig` nunca desactiva `.headers()`) no se mandaría nunca. La aplicación no usa
+    cookies en ningún sitio (el JWT se guarda en `localStorage` del navegador, autenticación
+    por cabecera `Authorization`, `SessionCreationPolicy.STATELESS`, CSRF desactivado a
+    propósito): no había ninguna cookie de sesión que marcar `Secure`/`HttpOnly`/`SameSite`.
+    El frontend llama al backend por `API_INTERNAL_URL` (`http://backend:8080`, red interna) en
+    el servidor y por `PUBLIC_URL` (el mismo dominio que ve el navegador, vía Caddy) en el
+    cliente — mecanismo que ya existía (`lib/api-server.ts` / `lib/api.ts`), solo hacía falta
+    la variable de entorno correcta en `docker-compose.prod.yml`.
+  - Tests nuevos (unitarios puros, sin Spring ni Testcontainers): `ProductionSecretsValidatorTest`
+    (secreto vacío, corto, el de ejemplo, uno real largo) y `ProductionAdminSeederTest` (con
+    mocks de los repositorios: crea el tenant y el OWNER cuando no existen, no toca nada si ya
+    existe la cuenta, rechaza una contraseña corta, rechaza un correo vacío). 8/8 en verde.
+- Hecho con el stack real (`docker-compose.prod.yml`, valores de prueba, `DOMAIN=:80`,
+  `--env-file .env.prod`, nunca commiteado):
+  - `docker compose -f docker-compose.prod.yml config` valida sin errores: red interna,
+    volúmenes con nombre, solo Caddy con `ports:`, el resto con `expose:`.
+  - `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build`: los 5
+    contenedores arrancan y acaban en `healthy` (postgres, ai-service, frontend, backend —
+    backend tardó un poco más por el `HEALTHCHECK` fallando con 503, ver el fallo real de abajo).
+  - `curl http://localhost/` (frontend, vía Caddy, puerto 80) → 200 con el HTML real de la
+    portada. `curl http://localhost/api/v1/public/plans` (backend, vía Caddy, mismo puerto 80,
+    sin exponer el 8080) → 200 con `[]` (sin tarifas: no hay seed en producción, ver
+    "Pendiente").
+  - Login del administrador de producción (`ADMIN_EMAIL`/`ADMIN_PASSWORD` de prueba) → 200,
+    token válido, rol OWNER. Login con las credenciales de demo (`javier@olympusgym.test` /
+    `Demo1234!` y `omaradmin@gmail.com` / `omaradmin`) → 401 las dos: no existen.
+  - Reiniciado el contenedor del backend con el mismo `.env.prod`: el log muestra "El
+    administrador de producción (...) ya existe: no se toca" en vez de crearlo otra vez.
+  - `docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm -e
+    GYMFLOW_JWT_SECRET=change-me-change-me-change-me-change-me-32b backend`: falla al arrancar
+    con el mensaje esperado. Lo mismo con `GYMFLOW_ADMIN_PASSWORD=corta123` (menos de 12
+    caracteres).
+  - **Fallo real encontrado y arreglado**: con el stack de producción arriba, `/actuator/health`
+    devolvía 503 aunque el backend funcionara bien en todo lo demás (login, CORS, las rutas de
+    Caddy...). Causa: `spring-boot-starter-data-redis` sigue en el classpath (Redis no se quitó
+    en este trozo, ver "Hecho"), Spring Boot añade solo un indicador de salud de Redis a
+    `/actuator/health`, y `docker-compose.prod.yml` no trae ningún servicio Redis (a propósito:
+    no tocarlo todavía). El indicador DOWN tumbaba el agregado entero. Arreglado con un
+    `application-prod.yml` nuevo que desactiva solo ese indicador
+    (`management.health.redis.enabled: false`) nada más para el perfil "prod"; en dev, donde
+    Redis sí está levantado y responde, no se toca. Verificado de nuevo tras el arreglo:
+    `/actuator/health` → 200 y el contenedor pasa a `healthy` en segundos.
+  - Al terminar: `docker compose -f docker-compose.prod.yml --env-file .env.prod down -v`
+    (contenedores, red y volúmenes de prueba eliminados) y borrado el `.env.prod` de prueba
+    (nunca estuvo en git; `.env.prod` y `.env.*.local` añadidos a `.gitignore`).
+  - Reconstruida también la imagen de **desarrollo** con los Dockerfiles nuevos
+    (`docker compose up -d --build`, sin RabbitMQ) para comprobar que los tres healthcheck
+    nuevos y el usuario sin privilegios del frontend no rompen nada fuera de producción: los 5
+    servicios de dev llegan a `healthy`, login probado, y los 41 tests de `ai-service` y los
+    31 end-to-end (contra el stack sin RabbitMQ, igual que correrá la CI) en verde.
+- Decisiones / simplificaciones:
+  - `DOMAIN` (host/IP para Caddy) y `PUBLIC_URL` (URL completa con esquema para CORS y el
+    build del frontend) son dos variables separadas a propósito, aunque se pisen en el caso
+    normal: no hay forma fiable de derivar el esquema (`http://` o `https://`) solo a partir de
+    `DOMAIN`, y forzar siempre `https://` habría roto la "primera prueba sin dominio".
+  - `ProductionAdminSeeder` solo crea el tenant y el OWNER, no tarifas: el encargo de este
+    trozo no las pedía, y "qué tarifas reales tiene el gimnasio" es una decisión de negocio que
+    no me correspondía inventar. Sin tarifas, nadie puede registrarse ni el OWNER puede cobrar
+    nada todavía (ver "Pendiente").
+  - No se forzó `cancelar_reserva` ni se tocó nada del asistente de IA en este trozo: es
+    infraestructura de despliegue, no tenía relación.
+  - Redis se queda en `docker-compose.yml` de desarrollo (no en el de producción) tal cual
+    estaba: el encargo decía expresamente no tocarlo todavía, a diferencia de RabbitMQ, que sí
+    se pidió quitar si no se usaba.
+- Pendiente (explícitamente fuera de alcance de este trozo, según el propio encargo):
+  - Copias de seguridad de Postgres, métricas (Actuator/Prometheus de verdad, más allá del
+    `/actuator/health` que ya existía), Redis en producción, despliegue real en un VPS.
+  - **Sin tarifas reales creadas en producción**: `ProductionAdminSeeder` no las crea (ver
+    "Decisiones"), y no hay pantalla de administración para darlas de alta desde `/admin`
+    (no se comprobó si existe un endpoint para crear `Plan`; si no existe, hace falta antes de
+    que el gimnasio pueda operar de verdad). Sin tarifas, el formulario de alta pública no
+    tiene nada que ofrecer y nadie puede registrarse como socio.
+  - No se probó un dominio real con HTTPS de verdad (Let's Encrypt necesita un dominio público
+    resoluble y un servidor con los puertos 80/443 accesibles desde fuera, que esta máquina de
+    desarrollo no tiene): verificado en su lugar que Caddy sirve en HTTP plano con `DOMAIN=:80`,
+    que es el modo que el propio encargo pedía probar aquí.
+- Cómo probarlo: `cp .env.prod.example .env.prod`, rellenar valores reales (o de prueba, para
+  un primer vistazo con `DOMAIN=:80`), y `docker compose -f docker-compose.prod.yml --env-file
+  .env.prod up -d --build`. Login del admin en `POST /api/v1/auth/login` con `ADMIN_EMAIL`/
+  `ADMIN_PASSWORD`.
+- Tests: backend `mvn test -Dtest=ProductionSecretsValidatorTest,ProductionAdminSeederTest` →
+  8/8 en verde (unitarios, sin Testcontainers). El resto de tests del backend que usan
+  Testcontainers siguen sin poder ejecutarse en esta máquina por la misma limitación de
+  Docker-en-Docker ya documentada en el Trozo 9c (commit 1); no es nueva de este trozo.
+  `ai-service`: `pytest -q` → 41/41. Frontend: `npm run typecheck` y `npm run build` en verde.
+  `npx playwright test` (stack de desarrollo sin RabbitMQ, como correrá la CI): 31/31 en verde.
+  Stack de producción probado de verdad contra Docker real (ver "Hecho con el stack real").
+
+---
+
 ### Trozo 9c (commit 3) - El asistente ya no "confirma" sin proponer de verdad (2026-10-11)
 - Hecho:
   - Mensaje de sistema: ahora deja claro que para proponer reservar o cancelar hay que llamar

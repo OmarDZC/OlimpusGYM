@@ -22,7 +22,8 @@ GymFlow: plataforma SaaS para gimnasios, proyecto de portfolio de un programador
 - `backend/`: Spring Boot 3.5, Java 21, monolito modular. Paquete raíz `com.gymflow`, un subpaquete por módulo (`tenant`, `auth`, `plan`, `booking`, `workout`, `admin`...). JPA + Flyway + PostgreSQL. Seguridad stateless con JWT.
 - `ai-service/`: FastAPI. Toda la lógica de IA vive aquí. Habla con el backend por REST.
 - `frontend/`: Next.js (App Router) + TypeScript + Tailwind v4.
-- Infra local: `docker-compose.yml` (Postgres con pgvector, Redis, RabbitMQ, Ollama opcional). Redis y RabbitMQ solo si aportan algo; no son obligatorios en el MVP.
+- Infra local: `docker-compose.yml` (Postgres con pgvector, Redis, Ollama opcional). Redis solo si aporta algo; no es obligatorio en el MVP. RabbitMQ se quitó en el Trozo 8a-1: nada lo usaba (ni `@RabbitListener` ni `RabbitTemplate` en el backend).
+- Producción: `docker-compose.prod.yml` (Postgres normal, sin pgvector — no se usa —, y Caddy como proxy inverso con HTTPS automático). Ver "Despliegue en producción" en `README.md`.
 
 ## Decisiones ya tomadas (no las cambies sin avisar)
 
@@ -47,7 +48,7 @@ GymFlow: plataforma SaaS para gimnasios, proyecto de portfolio de un programador
 ## Comandos
 
 ```bash
-make infra          # Postgres, Redis, RabbitMQ
+make infra          # Postgres, Redis
 make backend-test   # mvn test
 make ai-test        # pytest
 cd frontend && npm run dev | npm run typecheck | npm run build

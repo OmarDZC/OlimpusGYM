@@ -1,0 +1,16 @@
+# Proxy inverso de producción (Trozo 8a-1). {$DOMAIN} se lee de la variable de entorno DOMAIN
+# del contenedor de Caddy (ver docker-compose.prod.yml): con un dominio real, Caddy pide y
+# renueva solo un certificado HTTPS (Let's Encrypt); con una IP o ":80", sirve en HTTP sin
+# intentar HTTPS automático — así se puede probar el stack antes de tener un dominio.
+{$DOMAIN}
+
+encode gzip
+
+# La API del backend vive bajo /api/: todo lo demás es el frontend (Next.js).
+handle /api/* {
+	reverse_proxy backend:8080
+}
+
+handle {
+	reverse_proxy frontend:3000
+}

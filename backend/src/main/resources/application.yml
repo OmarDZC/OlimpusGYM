@@ -25,14 +25,13 @@ spring:
     redis:
       host: localhost
       port: 6379
-  rabbitmq:
-    host: localhost
-    port: 5672
-    username: gymflow
-    password: gymflow
 
 server:
   port: 8080
+  # Detrás de Caddy en producción, la petición le llega al backend en HTTP plano aunque el
+  # navegador use HTTPS: sin esto, request.isSecure() daría false y la cabecera HSTS (y
+  # cualquier redirección a HTTPS) nunca se enviaría. Caddy ya manda X-Forwarded-* de serie.
+  forward-headers-strategy: framework
 
 management:
   endpoints:
@@ -54,3 +53,8 @@ gymflow:
     # Orígenes del frontend con permiso de llamar a la API (coma-separados). En despliegue,
     # cambia esto a la URL pública real del frontend.
     allowed-origins: ${GYMFLOW_CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  admin:
+    # Administrador real de producción (ProductionAdminSeeder, Trozo 8a-1): vacíos por
+    # defecto, solo hacen falta fuera de dev/demo.
+    email: ${GYMFLOW_ADMIN_EMAIL:}
+    password: ${GYMFLOW_ADMIN_PASSWORD:}

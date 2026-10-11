@@ -13,4 +13,6 @@ RUN useradd --system --uid 1001 gymflow
 COPY --from=build /app/target/*.jar app.jar
 USER gymflow
 EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=5 \
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
 ENTRYPOINT ["java", "-jar", "app.jar"]
