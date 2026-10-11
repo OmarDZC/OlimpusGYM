@@ -20,7 +20,10 @@ test("el socio reserva una clase hablando con el asistente y confirmando la prop
   request,
 }) => {
   const ownerToken = await apiLogin(request, OWNER_EMAIL, DEMO_PASSWORD);
-  const session = await createTestSession(request, ownerToken);
+  // listar_clases ahora se limita sola a hoy y mañana cuando no se le da una fecha (Trozo 9c,
+  // para no mandarle al modelo los 14 días completos del horario): con el `daysAhead` por
+  // defecto (3) la clase de prueba quedaría fuera de esa ventana y el LLM simulado no la vería.
+  const session = await createTestSession(request, ownerToken, { daysAhead: 1 });
 
   await registerViaUi(page, {
     email: uniqueEmail("e2e.asistente"),

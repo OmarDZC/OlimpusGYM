@@ -6,6 +6,10 @@ export const DEMO_PASSWORD = "Demo1234!";
 export const OWNER_EMAIL = "javier@olympusgym.test";
 export const STAFF_EMAIL = "marta@olympusgym.test";
 export const MEMBER_EMAIL = "carlos@olympusgym.test";
+/** Cuenta de dueño del seed de dev con paréntesis en el nombre ("Omar (admin de desarrollo)"):
+ * sirve para probar que el avatar del panel de gestión los ignora al sacar las iniciales. */
+export const DEV_ADMIN_EMAIL = "omaradmin@gmail.com";
+export const DEV_ADMIN_PASSWORD = "omaradmin";
 
 export const API_URL = process.env.E2E_API_URL ?? "http://localhost:8080";
 

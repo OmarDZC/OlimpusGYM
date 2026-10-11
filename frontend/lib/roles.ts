@@ -31,3 +31,7 @@ const MEMBER_AREA_EXTRA_PATHS = ["/horario", "/entrenador-ia"];
 export function isMemberAreaPath(pathname: string): boolean {
   return pathname.startsWith("/cuenta") || MEMBER_AREA_EXTRA_PATHS.includes(pathname);
 }
+
+export function isAdminAreaPath(pathname: string): boolean {
+  return pathname.startsWith("/admin");
+}

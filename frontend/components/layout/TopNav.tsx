@@ -10,7 +10,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { cn } from "@/lib/cn";
-import { homeForRole, isMemberAreaPath } from "@/lib/roles";
+import { homeForRole, isAdminAreaPath, isMemberAreaPath } from "@/lib/roles";
 
 const navLinks = [
   { label: "Horario", href: "/horario" },
@@ -66,15 +66,20 @@ function AuthActions({ stretch = false }: { stretch?: boolean }) {
 
 /**
  * Navegación superior sin barra lateral (DESIGN.md §4 y §8). Hamburguesa en móvil, salvo en
- * la zona del socio (`/cuenta/*`, `/horario`, `/entrenador-ia` con sesión de MEMBER): ahí la
- * barra inferior (`MobileAccountNav`) ya hace de menú, así que en móvil la cabecera se reduce
- * al logo y el interruptor de tema; en escritorio no cambia nada.
+ * la zona del socio (`/cuenta/*`, `/horario`, `/entrenador-ia` con sesión de MEMBER, donde la
+ * barra inferior `MobileAccountNav` ya hace de menú) y en `/admin` con sesión de dueño/staff
+ * (donde `AdminNav` ya trae sus propias pestañas y su propio menú de cuenta): en esos casos,
+ * en móvil la cabecera se reduce al logo y el interruptor de tema, para no duplicar la
+ * navegación ni el botón de salir. En escritorio no cambia nada.
  */
 export function TopNav() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const { status, user } = useAuth();
   const inMemberArea = status === "signed-in" && user?.role === "MEMBER" && isMemberAreaPath(pathname);
+  const inAdminArea =
+    status === "signed-in" && (user?.role === "OWNER" || user?.role === "STAFF") && isAdminAreaPath(pathname);
+  const collapseMobileNav = inMemberArea || inAdminArea;
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur">
@@ -101,7 +106,7 @@ export function TopNav() {
           <AuthActions />
         </div>
 
-        {inMemberArea ? (
+        {collapseMobileNav ? (
           <div className="md:hidden">
             <ThemeToggle />
           </div>
@@ -118,7 +123,7 @@ export function TopNav() {
         )}
       </div>
 
-      {!inMemberArea && mobileOpen && (
+      {!collapseMobileNav && mobileOpen && (
         <nav className="border-t border-border px-4 py-4 md:hidden" aria-label="Navegación móvil">
           <ul className="flex flex-col gap-1">
             {navLinks.map((link) => (

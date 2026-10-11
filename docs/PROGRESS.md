@@ -13,6 +13,76 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 9c (commit 2) - Tarjetas reales en el chat y panel de gestión en móvil (2026-10-11)
+- Hecho:
+  - Chat del asistente (`/horario` → "Reservar con IA"): la propuesta de reservar ya no es
+    solo una frase del modelo, es una tarjeta (`ScheduleOptionCard`) con los datos reales del
+    commit 1 (`pendingAction.option`): nombre, día y hora en español llano, sala, entrenador e
+    iconos de línea (`lucide-react`, nada de emojis). Botones "Confirmar" y "Cambiar horario"
+    (solo cuando `options` trae más de una candidata); "Cambiar horario" despliega las demás
+    clases como una lista de tarjetas pulsables (`role="group"`), y elegir una construye la
+    propuesta en el cliente a partir de esos mismos datos reales, sin volver a llamar al
+    modelo: ahorra una llamada al LLM y es inmediato. Los mensajes de texto llevan
+    `whitespace-pre-wrap` por si el modelo devuelve saltos de línea. No existía una captura de
+    referencia en `docs/design/v2/asistente-chat/` (no se llegó a crear en el diseño): se
+    siguió el lenguaje visual ya existente del resto de la app (tarjetas, tokens de
+    `DESIGN.md`, `docs/design/v2/horario-clases/screen.png` como referencia más cercana).
+  - Panel de gestión en móvil (`/admin`): las 5 pestañas van en una sola fila con
+    `overflow-x-auto` (antes se partían en varias líneas), degradado en los dos bordes
+    (`bg-gradient-to-r/l ... to-transparent`) para avisar de que hay más, y la pestaña activa
+    se centra sola al cargar (`scrollIntoView({inline: "center"})`, verificado entrando
+    directamente en `/admin/mensajes`, la última pestaña). El nombre, el rol y "Salir" se
+    sacaron de la fila propia a un menú en el avatar (`AccountMenu`, patrón igual al
+    `Dropdown` ya existente: clic fuera o Escape cierra), que es además la primera forma de
+    cerrar sesión que tenía el panel de gestión en móvil (antes no había ninguna: `AdminNav` no
+    tenía botón de salir y la cabecera global `TopNav` mostraba su propio menú hamburguesa
+    completo encima, con enlaces de la web pública y su propio "Salir", duplicando controles).
+    Para evitar esa redundancia, `TopNav` ahora también se reduce a logo + interruptor de tema
+    en móvil cuando la sesión es de dueño/staff y la ruta es `/admin/*` (`isAdminAreaPath`,
+    mismo mecanismo que ya existía para el área de socio). En escritorio, `AdminNav` no cambia
+    nada (verificado visualmente). Iniciales del avatar: se quita lo que vaya entre paréntesis
+    antes de sacarlas (por ejemplo, "Omar (admin de desarrollo)" → "O", nunca "O(").
+  - Tests end-to-end nuevos (`e2e/tests/assistant-chat-cards-and-admin-mobile.spec.ts`,
+    móvil 390×844 salvo el de escritorio): la propuesta lleva datos reales (sala, plazas) y
+    "Cambiar horario" permite reservar una clase distinta a la que propuso el modelo
+    (confirmado contra `/cuenta/reservas`, no solo contra el texto del chat); las 5 pestañas
+    del panel comparten la misma fila (mismo `y` del `boundingBox`); nombre/rol/"Salir" solo
+    aparecen al abrir el menú del avatar; el avatar no lleva paréntesis (con la cuenta de
+    desarrollo del seed, que sí los tiene en el nombre); en escritorio no cambia nada. 5/5 en
+    verde, y los 31 tests end-to-end del repo en verde (incluidos los que ya existían).
+  - `e2e/fake-llm/server.js` actualizado: ahora pide `listar_clases` filtrando por disciplina
+    `CrossFit` (antes sin filtro), para que el asistente lo encuentre con el nuevo límite de
+    "hoy y mañana" del commit 1; antes le llegaban las dos semanas completas del horario, así
+    que no hacía falta filtrar para encontrar la clase de prueba.
+- Decisiones / simplificaciones:
+  - `assistant-booking.spec.ts` creaba su clase de prueba 3 días por delante
+    (`daysAhead` por defecto); con la ventana nueva de "hoy y mañana" del commit 1 quedaba
+    fuera y el test habría empezado a fallar. Se cambió a `daysAhead: 1`, con un comentario
+    explicando por qué.
+  - El avatar que no tiene parche de prueba con nombre entre paréntesis por registro (el alta
+    pública solo crea socios, nunca dueño/staff): se usó la cuenta de dueño del propio seed de
+    dev que ya tiene paréntesis en el nombre ("Omar (admin de desarrollo)",
+    `omaradmin@gmail.com`) en vez de inventar una cuenta nueva.
+  - "Cambiar horario" construye la propuesta en el cliente a partir de `options` (ya validadas
+    por el servidor en la respuesta anterior) en lugar de volver a preguntarle al modelo: es
+    la opción más simple y evita gastar otra llamada al LLM solo para repetir datos que ya
+    tenemos.
+- Pendiente:
+  - No se probó con el modelo real por separado en este commit (el commit 1 ya lo hizo con la
+    misma tarjeta de datos, ver su entrada); aquí se verificó con capturas reales en el
+    navegador contra el modelo real (Groq) y, para el flujo completo, con el LLM simulado vía
+    Playwright.
+  - No hay herramienta de comparación visual automática (sin snapshots de referencia en el
+    repo): las capturas de móvil y escritorio se compararon a mano durante esta sesión, no
+    quedan guardadas como test.
+- Cómo probarlo: `docker compose up -d --build frontend`, entrar en `/horario` como socio con
+  tarifa Completa o Atleta Pro y abrir "Reservar con IA"; o como dueño/staff, abrir `/admin` en
+  un móvil (o la vista responsive del navegador) y tocar el avatar.
+- Tests: `npm run typecheck` y `npm run build` en verde. `npx playwright test` (con
+  `docker-compose.e2e.yml`, LLM simulado): 31/31 en verde.
+
+---
+
 ### Trozo 9c (commit 1) - Asistente de IA: filtros, reintento y opciones reales (2026-10-11)
 - Hecho:
   - `listar_clases` filtra en el servidor, no en el modelo: nuevos parámetros `date_from`/

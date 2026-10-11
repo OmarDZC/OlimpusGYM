@@ -505,16 +505,29 @@ export type AssistantChatRole = "user" | "assistant";
 
 export type AssistantChatMessage = { role: AssistantChatRole; content: string };
 
+/** Una clase o reserva real, construida por el servidor: lo que pinta la tarjeta del chat. */
+export type AssistantScheduleOption = {
+  id: string;
+  name: string | null;
+  discipline: string | null;
+  startsAt: string | null;
+  room: string | null;
+  coachName: string | null;
+  freeSlots: number | null;
+};
+
 export type AssistantPendingAction = {
   type: "book" | "cancel";
   sessionId: string | null;
   bookingId: string | null;
   summary: string;
+  option: AssistantScheduleOption | null;
 };
 
 export type AssistantChatResult = {
   reply: string;
   pendingAction: AssistantPendingAction | null;
+  options: AssistantScheduleOption[] | null;
 };
 
 export async function assistantChat(

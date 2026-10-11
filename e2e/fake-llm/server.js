@@ -55,7 +55,11 @@ function handleChat(body) {
   const toolResults = messages.filter((m) => m.role === "tool");
 
   if (toolResults.length === 0) {
-    return toolCall("listar_clases", {});
+    // CrossFit: la disciplina que usa `createTestSession` (siempre), así listar_clases
+    // encuentra de verdad la clase de prueba aunque el asistente ahora se limite solo a
+    // hoy y mañana y a las 8 más próximas (Trozo 9c) en vez de pasarle las dos semanas
+    // completas del horario.
+    return toolCall("listar_clases", { discipline: "CrossFit" });
   }
 
   if (toolResults.length === 1) {

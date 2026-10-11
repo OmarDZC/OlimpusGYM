@@ -1,21 +1,108 @@
 "use client";
 
-import { Send, X } from "lucide-react";
+import { CalendarClock, MapPin, Send, Users, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import * as api from "@/lib/api";
-import { ApiError, type AssistantChatMessage, type AssistantPendingAction } from "@/lib/api";
+import {
+  ApiError,
+  type AssistantChatMessage,
+  type AssistantPendingAction,
+  type AssistantScheduleOption,
+} from "@/lib/api";
 import { cn } from "@/lib/cn";
 
 const MAX_HISTORY = 20;
+const MADRID_TZ = "Europe/Madrid";
 
 type DisplayMessage = { id: string; role: "user" | "assistant"; content: string };
 
 function trimHistory(messages: AssistantChatMessage[]): AssistantChatMessage[] {
   return messages.length > MAX_HISTORY ? messages.slice(messages.length - MAX_HISTORY) : messages;
+}
+
+function formatOptionDateTime(iso: string | null): string {
+  if (!iso) return "fecha sin confirmar";
+  const date = new Date(iso);
+  const day = date.toLocaleDateString("es-ES", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    timeZone: MADRID_TZ,
+  });
+  const time = date.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: MADRID_TZ });
+  return `${day} · ${time}`;
+}
+
+function buildBookSummary(option: AssistantScheduleOption): string {
+  const where = option.room ? ` en ${option.room}` : "";
+  return `Reservar ${option.name ?? "la clase"} el ${formatOptionDateTime(option.startsAt)}${where}`;
+}
+
+/** Tarjeta con los datos reales de una clase: la misma tanto para la propuesta activa como
+ * para cada alternativa de "Cambiar horario" (DESIGN.md: iconos de línea, nada de texto
+ * inventado por el modelo, todos estos campos vienen tal cual del servidor). */
+function ScheduleOptionCard({
+  option,
+  selected,
+  onSelect,
+}: {
+  option: AssistantScheduleOption;
+  selected?: boolean;
+  onSelect?: () => void;
+}) {
+  const body = (
+    <>
+      <p className="font-display text-base font-bold uppercase tracking-tight text-text">{option.name ?? "Clase"}</p>
+      <p className="mt-1 flex items-center gap-1.5 text-sm text-text-muted">
+        <CalendarClock size={14} aria-hidden="true" className="shrink-0" />
+        {formatOptionDateTime(option.startsAt)}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
+        {option.room && (
+          <span className="inline-flex items-center gap-1">
+            <MapPin size={14} aria-hidden="true" />
+            {option.room}
+          </span>
+        )}
+        {option.coachName && (
+          <span className="inline-flex items-center gap-1">
+            <UserRound size={14} aria-hidden="true" />
+            {option.coachName}
+          </span>
+        )}
+        {option.freeSlots !== null && (
+          <span className="inline-flex items-center gap-1">
+            <Users size={14} aria-hidden="true" />
+            {option.freeSlots} plazas libres
+          </span>
+        )}
+      </div>
+    </>
+  );
+
+  if (!onSelect) {
+    return <div className="rounded-card border border-accent bg-surface-2 p-3.5">{body}</div>;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={cn(
+        "w-full rounded-card border p-3.5 text-left transition-colors",
+        selected
+          ? "border-accent bg-surface-2"
+          : "border-border bg-surface-2 hover:border-accent/60 hover:bg-surface",
+      )}
+    >
+      {body}
+    </button>
+  );
 }
 
 /**
@@ -40,6 +127,8 @@ export function AssistantChatPanel({
   const [error, setError] = useState<string | null>(null);
   const [planForbidden, setPlanForbidden] = useState(false);
   const [pendingAction, setPendingAction] = useState<AssistantPendingAction | null>(null);
+  const [options, setOptions] = useState<AssistantScheduleOption[] | null>(null);
+  const [showAlternatives, setShowAlternatives] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -97,6 +186,8 @@ export function AssistantChatPanel({
       setHistory((prev) => trimHistory([...prev, { role: "assistant", content: result.reply }]));
       addMessage("assistant", result.reply);
       setPendingAction(result.pendingAction);
+      setOptions(result.options);
+      setShowAlternatives(false);
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
         setPlanForbidden(true);
@@ -117,6 +208,8 @@ export function AssistantChatPanel({
       setHistory((prev) => trimHistory([...prev, { role: "assistant", content: result.reply }]));
       addMessage("assistant", result.reply);
       setPendingAction(null);
+      setOptions(null);
+      setShowAlternatives(false);
       onActionConfirmed();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "No se pudo confirmar. Inténtalo de nuevo.");
@@ -131,7 +224,14 @@ export function AssistantChatPanel({
   function handleDecline() {
     addMessage("assistant", "De acuerdo, no he hecho nada.");
     setPendingAction(null);
+    setOptions(null);
+    setShowAlternatives(false);
     inputRef.current?.focus();
+  }
+
+  function handleSelectAlternative(option: AssistantScheduleOption) {
+    setPendingAction({ type: "book", sessionId: option.id, bookingId: null, summary: buildBookSummary(option), option });
+    setShowAlternatives(false);
   }
 
   return (
@@ -168,7 +268,7 @@ export function AssistantChatPanel({
             <div
               key={message.id}
               className={cn(
-                "max-w-[85%] rounded-card px-3.5 py-2.5 text-sm",
+                "max-w-[85%] whitespace-pre-wrap rounded-card px-3.5 py-2.5 text-sm",
                 message.role === "user"
                   ? "self-end bg-accent text-on-accent"
                   : "self-start border border-border bg-surface-2 text-text",
@@ -179,16 +279,47 @@ export function AssistantChatPanel({
           ))}
 
           {pendingAction && (
-            <div className="w-full max-w-[85%] self-start rounded-card border border-accent bg-surface-2 p-3.5">
-              <p className="text-sm text-text">{pendingAction.summary}</p>
-              <div className="mt-3 flex gap-2">
+            <div className="w-full self-start">
+              {pendingAction.option ? (
+                <ScheduleOptionCard option={pendingAction.option} />
+              ) : (
+                <div className="rounded-card border border-accent bg-surface-2 p-3.5">
+                  <p className="text-sm text-text">{pendingAction.summary}</p>
+                </div>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
                 <Button type="button" variant="primary" size="sm" disabled={sending} onClick={handleConfirm}>
                   Confirmar
                 </Button>
+                {pendingAction.type === "book" && options && options.length > 1 && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={sending}
+                    aria-expanded={showAlternatives}
+                    onClick={() => setShowAlternatives((v) => !v)}
+                  >
+                    Cambiar horario
+                  </Button>
+                )}
                 <Button type="button" variant="secondary" size="sm" disabled={sending} onClick={handleDecline}>
                   Cancelar
                 </Button>
               </div>
+
+              {showAlternatives && options && options.length > 1 && (
+                <div className="mt-3 flex flex-col gap-2" role="group" aria-label="Otros horarios disponibles">
+                  {options.map((option) => (
+                    <ScheduleOptionCard
+                      key={option.id}
+                      option={option}
+                      selected={option.id === pendingAction.sessionId}
+                      onSelect={() => handleSelectAlternative(option)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
