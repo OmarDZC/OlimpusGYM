@@ -1,0 +1,8 @@
+# Solo para el perfil "demo" (docker-compose.prod.yml con SPRING_PROFILES_ACTIVE=demo): la
+# demo pública usa el mismo stack que producción y tampoco tiene Redis todavía (Trozo 8a-2,
+# Commit 1; Redis llega en el Commit 2). Mismo motivo que application-prod.yml: sin esto,
+# /actuator/health devuelve 503 por el indicador de Redis aunque todo lo demás funcione.
+management:
+  health:
+    redis:
+      enabled: false

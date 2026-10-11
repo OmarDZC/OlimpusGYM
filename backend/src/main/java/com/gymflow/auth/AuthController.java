@@ -1,6 +1,7 @@
 package com.gymflow.auth;
 
 import com.gymflow.auth.dto.AuthResponse;
+import com.gymflow.auth.dto.DemoLoginRequest;
 import com.gymflow.auth.dto.LoginRequest;
 import com.gymflow.auth.dto.MeResponse;
 import com.gymflow.auth.dto.RegisterRequest;
@@ -14,6 +15,7 @@ import com.gymflow.tenant.TenantRepository;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.util.UUID;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -28,12 +30,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
+    /** Trozo 8a-2: las dos cuentas que usan los botones "entrar como demo" en /acceso, solo
+     * disponibles con el perfil "demo" activo. Son las mismas que crea DevDataSeeder en modo
+     * demo (owner y un socio con tarifa que incluye IA), con las contraseñas fuertes de
+     * DEMO_OWNER_PASSWORD/DEMO_MEMBER_PASSWORD, nunca las de desarrollo. */
+    private static final String DEMO_OWNER_EMAIL = "javier@olympusgym.test";
+    private static final String DEMO_MEMBER_EMAIL = "carlos@olympusgym.test";
+
     private final TenantRepository tenants;
     private final UserRepository users;
     private final PlanRepository plans;
     private final MembershipRepository memberships;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final Environment environment;
 
     public AuthController(
             TenantRepository tenants,
@@ -41,13 +51,15 @@ public class AuthController {
             PlanRepository plans,
             MembershipRepository memberships,
             PasswordEncoder passwordEncoder,
-            JwtService jwtService) {
+            JwtService jwtService,
+            Environment environment) {
         this.tenants = tenants;
         this.users = users;
         this.plans = plans;
         this.memberships = memberships;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.environment = environment;
     }
 
     @PostMapping("/register")
@@ -87,6 +99,21 @@ public class AuthController {
 
         String token = jwtService.issue(user.getId(), user.getTenantId(), user.getRole().name(), user.getEmail());
         return AuthResponse.from(user, token);
+    }
+
+    @PostMapping("/demo-login")
+    public ResponseEntity<AuthResponse> demoLogin(@Valid @RequestBody DemoLoginRequest request) {
+        if (!environment.matchesProfiles("demo")) {
+            // Ni 403 ni un mensaje de "no disponible": en producción este endpoint no debe
+            // dar ninguna pista de que existe.
+            return ResponseEntity.notFound().build();
+        }
+        String email = "OWNER".equals(request.role()) ? DEMO_OWNER_EMAIL : DEMO_MEMBER_EMAIL;
+        User user = users.findByEmailIgnoreCase(email)
+            .orElseThrow(() -> new IllegalStateException("La cuenta de demo " + email + " no existe: revisa el seed"));
+
+        String token = jwtService.issue(user.getId(), user.getTenantId(), user.getRole().name(), user.getEmail());
+        return ResponseEntity.ok(AuthResponse.from(user, token));
     }
 
     @GetMapping("/me")

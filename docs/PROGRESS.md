@@ -13,6 +13,122 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 8a-2 (commit 1 de 2) - Producción: datos, modo demo (2026-10-11)
+- Hecho:
+  - **Datos de negocio siempre presentes, en todos los perfiles**: `BusinessDataSeeder`
+    (`@Component`, sin `@Profile`, `@Order(0)`) crea el tenant único `olympusgym` y las 3
+    tarifas reales (BÁSICA 39 €, COMPLETA 59 €, ATLETA_PRO 79 €, con los límites de clases/mes,
+    ventana de reserva y acceso a IA de `docs/LOGIC.md`), idempotente. Antes esto lo creaba
+    `DevDataSeeder` (solo dev/demo); ahora `DevDataSeeder` y `ProductionAdminSeeder` solo
+    *buscan* el tenant/tarifas (`orElseThrow`, nunca los crean) y corren después
+    (`@Order(10)`), para no pisarse con `BusinessDataSeeder`. Verificado con un test de
+    Testcontainers con el perfil `prod` activo: hay tenant y las 3 tarifas con los precios
+    exactos, y no hay ni un solo socio ni cuenta de ejemplo (`users.count() == 1`, solo el
+    admin real).
+  - **Modo demo desplegable**: `docker-compose.prod.yml` arranca con `SPRING_PROFILES_ACTIVE`
+    como variable (`prod` por defecto, o `demo`), mismo stack y mismo `Caddyfile`.
+    - `GET /api/v1/public/config` (`PublicConfigController`, público) devuelve
+      `{"demoMode": true|false}` según `environment.matchesProfiles("demo")`.
+    - `/acceso` muestra, solo si `demoMode` es `true`: una franja "Demostración: los datos son
+      de ejemplo y se reinician cada noche" y dos botones, "Entrar como socio de
+      demostración" / "Entrar como dueño de demostración", que llaman a
+      `POST /api/v1/auth/demo-login` (`{"role": "MEMBER"|"OWNER"}`) y entran como
+      `carlos@olympusgym.test` / `javier@olympusgym.test` (las mismas cuentas de siempre del
+      seed). Ese endpoint responde **404** (nunca 403, para no dar pistas de que existe) si
+      el perfil activo no es `demo`.
+    - `DevDataSeeder` reutiliza su lógica de siempre (horario de 2 semanas, 12 socios, la
+      rutina de Carlos...) también en modo demo, pero: nunca crea la cuenta de admin de
+      desarrollo (`omaradmin`/contraseña corta y publicada en el README), y las cuentas usan
+      contraseñas fuertes por variable de entorno (`DEMO_OWNER_PASSWORD`,
+      `DEMO_MEMBER_PASSWORD`, sin prefijo `GYMFLOW_` a propósito, igual que las pide el
+      encargo) en vez de la contraseña de desarrollo compartida. Si faltan en modo demo, el
+      backend se niega a arrancar (mismo patrón que `ProductionSecretsValidator`).
+    - `ProductionSecretsValidator` (el secreto de JWT fuerte y no el de ejemplo del repo) pasa
+      de `@Profile("prod")` a `@Profile({"prod", "demo"})`: la demo es igual de pública que
+      producción (mismo dominio expuesto), así que necesita la misma garantía. Lista
+      explícita de perfiles, no una negación (`"!dev & !demo"`): esa forma fue la causa de un
+      fallo real en CI en el Trozo 8a-1 (ver esa entrada) porque también coincide con el
+      contexto "sin perfil activo" en el que corren casi todos los tests; una lista explícita
+      no tiene ese problema.
+    - `application-demo.yml` (nuevo, solo perfil `demo`): `management.health.redis.enabled:
+      false`, mismo motivo y mismo arreglo que `application-prod.yml` del Trozo 8a-1 (Redis no
+      está en el stack todavía, así que el indicador automático de Spring Boot dejaría
+      `/actuator/health` en 503 si no se desactiva).
+  - **`scripts/reset-demo.sh`**: pensado para cron nocturno. Comprueba que
+    `SPRING_PROFILES_ACTIVE=demo` en el `.env.prod` indicado (si no, aborta: este script borra
+    datos de socios y reservas, no debe poder ejecutarse por error contra producción de
+    verdad); trunca con `CASCADE` las tablas de datos de ejemplo/de usuario (`users`,
+    `memberships`, `class_sessions`, `bookings`, `workout_plans`, `workout_logs`,
+    `membership_plan_changes`, `contact_messages`) **sin tocar** `tenants` ni `plans` (esos son
+    datos de negocio reales, no de ejemplo); reinicia el contenedor del backend para que
+    `BusinessDataSeeder` y `DevDataSeeder` vuelvan a sembrar la demo desde cero al arrancar.
+  - Tests nuevos: `BusinessDataSeederTest` (unitario puro, con mocks: crea tenant+3 tarifas si
+    no existen, no hace nada si ya existen) y `BusinessDataSeederProductionProfileTest`
+    (Testcontainers, perfil `prod`: tenant y tarifas con los valores exactos, sin socios ni
+    cuentas de demo). `DemoLoginHttpTest` (Testcontainers, perfil `demo`: `/public/config`
+    devuelve `demoMode=true`, login como OWNER/MEMBER funciona y devuelve la cuenta correcta,
+    un rol inválido da 400) y `DemoLoginDisabledInProductionTest` (Testcontainers, perfil
+    `prod`: `demoMode=false`, `/auth/demo-login` da 404). `ProductionAdminSeederTest` ajustado
+    (ahora asume que el tenant ya existe; nuevo caso: falla claro si no existe).
+- Hecho con el stack real (`docker-compose.prod.yml`, valores de prueba, nunca commiteados):
+  - **Modo demo**: `SPRING_PROFILES_ACTIVE=demo`, `DEMO_OWNER_PASSWORD`/`DEMO_MEMBER_PASSWORD`
+    de prueba. Los 5 contenedores llegan a `healthy`. `curl` real a través de Caddy:
+    `GET /api/v1/public/config` → `{"demoMode":true}`; `POST /api/v1/auth/demo-login` como
+    OWNER y como MEMBER → 200 con el token y la cuenta correcta; con un rol inválido → 400.
+    En el navegador, `/acceso` muestra la franja y los dos botones; al pulsar "Entrar como
+    socio de demostración" entra de verdad como Carlos y redirige a `/cuenta` con sus datos
+    (rutina, constancia, cuota Atleta Pro).
+    - `scripts/reset-demo.sh` probado de verdad: antes del reinicio había 15 usuarios, 13
+      reservas y 84 sesiones de clase; tras ejecutarlo, las tablas de ejemplo quedaron vacías,
+      el backend se reinició, volvió a `healthy`, y al terminar de sembrar había exactamente
+      los mismos 15/13/84 (datos frescos, mismo volumen que el seed de siempre), con `tenants`
+      y `plans` intactos durante todo el proceso, y el login de demo siguiendo funcionando
+      después.
+  - **Modo producción, para comprobar que no se rompió nada**: `SPRING_PROFILES_ACTIVE=prod`
+    con volúmenes nuevos (sin datos de la prueba de demo anterior). `GET /public/config` →
+    `{"demoMode":false}`; `POST /auth/demo-login` → 404; login con el admin real
+    (`ADMIN_EMAIL`/`ADMIN_PASSWORD` de prueba) → 200, rol OWNER; las cuentas conocidas de
+    dev/demo (`javier@olympusgym.test` con `Demo1234!`, `omaradmin@gmail.com`) → 401 (no
+    existen).
+  - `mvn test` (sin Docker en esta máquina, mismo límite de siempre): 111 tests, 0 fallos, 0
+    errores, 92 omitidos (incluidos los 6 nuevos de Testcontainers de este commit, que sí
+    corrieron de verdad contra el stack real arriba y correrán también en la CI real). Los 3
+    unitarios puros nuevos (`BusinessDataSeederTest`) y los existentes
+    (`ProductionSecretsValidatorTest`, `ProductionAdminSeederTest`) en verde sin omitir nada.
+  - Frontend: `npm run typecheck` y `npm run build` en verde (incluye la franja y los botones
+    nuevos de `/acceso`).
+- Decisiones / simplificaciones:
+  - `DevDataSeeder` se reutiliza para dev y demo en vez de crear un seeder de demo aparte: dan
+    el mismo volumen de datos de ejemplo (horario, socios, reservas, rutina de Carlos) y así la
+    demo pública no sale "vacía" ni necesita su propio código casi duplicado, solo cambia qué
+    contraseña usa cada cuenta y si se crea o no la cuenta de admin de desarrollo.
+  - Las cuentas fijas de los botones de demo son las mismas del seed de siempre
+    (`javier@olympusgym.test` / `carlos@olympusgym.test`), no cuentas nuevas: Carlos ya tiene
+    rutina y tarifa Atleta Pro (con IA) de ejemplo, así que el botón de "socio" enseña algo
+    interesante desde el primer segundo.
+  - `GYMFLOW_ADMIN_EMAIL`/`GYMFLOW_ADMIN_PASSWORD` y `DEMO_OWNER_PASSWORD`/
+    `DEMO_MEMBER_PASSWORD` dejaron de ser obligatorios (`${VAR:?...}`) en
+    `docker-compose.prod.yml` y pasaron a `${VAR:-}` (opcionales con Compose, vacíos por
+    defecto): antes de este commit solo existía el perfil `prod` y esas dos primeras eran
+    siempre obligatorias; ahora, según el perfil, hace falta un par o el otro, y Compose no
+    sabe interpolar variables condicionalmente. La comprobación "de verdad" sigue existiendo,
+    solo que la hace el backend al arrancar (`ProductionAdminSeeder`/`DevDataSeeder`), con un
+    mensaje igual de claro, aunque el fallo llegue unos segundos más tarde que si lo detectara
+    `docker compose up` al vuelo.
+- Pendiente: el commit 2 de este trozo (copias de seguridad, Actuator restringido, Redis y
+  límite de uso de la IA, `docs/DEPLOY.md`).
+- Cómo probarlo:
+  - `mvn test` (backend, con Docker real los 6 tests nuevos de demo dejan de omitirse).
+  - Demo real: `cp .env.prod.example .env.prod`, rellenar con `SPRING_PROFILES_ACTIVE=demo` y
+    las contraseñas de demo, `docker compose -f docker-compose.prod.yml --env-file .env.prod
+    up -d --build`, abrir `http://localhost/acceso` y pulsar cualquiera de los dos botones.
+    `./scripts/reset-demo.sh .env.prod` para probar el reinicio nocturno a mano.
+- Tests: `mvn test` → BUILD SUCCESS, 111 tests, 0 fallos, 0 errores (92 omitidos por falta de
+  Docker en esta máquina, incluidos los 6 nuevos, verificados aparte contra el stack real).
+  Frontend: `npm run typecheck` y `npm run build` en verde.
+
+---
+
 ### Trozo 8a-1 - Producción: lo esencial (2026-10-11)
 - Hecho:
   - **RabbitMQ quitado por completo**: nada lo usaba (ni `@RabbitListener` ni `RabbitTemplate`

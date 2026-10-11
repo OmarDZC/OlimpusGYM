@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,18 +18,20 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Administrador real de producción (Trozo 8a-1): en producción no hay seed de ejemplo
  * (ver {@link DevDataSeeder}), así que sin esto no habría ninguna cuenta OWNER con la que
- * entrar la primera vez. Crea el tenant único si todavía no existe y, si no hay ya un usuario
- * con el correo de {@code GYMFLOW_ADMIN_EMAIL}, lo da de alta como OWNER con
- * {@code GYMFLOW_ADMIN_PASSWORD}. Idempotente: en arranques siguientes no hace nada si la
- * cuenta ya existe.
+ * entrar la primera vez. Si no hay ya un usuario con el correo de {@code GYMFLOW_ADMIN_EMAIL},
+ * lo da de alta como OWNER con {@code GYMFLOW_ADMIN_PASSWORD}. Idempotente: en arranques
+ * siguientes no hace nada si la cuenta ya existe.
  *
  * <p>Atado al perfil "prod" en concreto (ver {@link com.gymflow.config.ProductionSecretsValidator}
  * para por qué "!dev &amp; !demo" rompía los tests con Testcontainers, que no activan ningún
  * perfil): con ese mismo motivo, este seeder también se habría intentado ejecutar ahí y habría
- * fallado por falta de GYMFLOW_ADMIN_EMAIL/GYMFLOW_ADMIN_PASSWORD.
+ * fallado por falta de GYMFLOW_ADMIN_EMAIL/GYMFLOW_ADMIN_PASSWORD. El tenant ya no lo crea esta
+ * clase (Trozo 8a-2): lo crea {@link BusinessDataSeeder}, que corre en todos los perfiles y
+ * antes que este (@Order).
  */
 @Component
 @Profile("prod")
+@Order(10)
 public class ProductionAdminSeeder implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(ProductionAdminSeeder.class);
@@ -67,7 +70,8 @@ public class ProductionAdminSeeder implements CommandLineRunner {
         }
 
         Tenant tenant = tenants.findBySlug(Tenant.DEFAULT_SLUG)
-            .orElseGet(() -> tenants.save(new Tenant("OlympusGYM", Tenant.DEFAULT_SLUG)));
+            .orElseThrow(() -> new IllegalStateException(
+                "No existe el tenant por defecto: BusinessDataSeeder debería haberlo creado antes."));
 
         if (users.existsByTenantIdAndEmailIgnoreCase(tenant.getId(), adminEmail)) {
             log.info("El administrador de producción ({}) ya existe: no se toca.", adminEmail);

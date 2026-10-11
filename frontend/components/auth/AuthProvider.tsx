@@ -20,6 +20,7 @@ type AuthContextValue = {
   token: string | null;
   login: (email: string, password: string) => Promise<AuthUser>;
   register: (input: RegisterInput) => Promise<AuthUser>;
+  demoLogin: (role: "MEMBER" | "OWNER") => Promise<AuthUser>;
   logout: () => void;
 };
 
@@ -75,6 +76,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [applySession],
   );
 
+  const demoLogin = useCallback(
+    async (role: "MEMBER" | "OWNER") => {
+      const auth = await api.demoLogin(role);
+      return applySession(auth);
+    },
+    [applySession],
+  );
+
   const logout = useCallback(() => {
     clearStoredToken();
     setUser(null);
@@ -83,8 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ status, user, token, login, register, logout }),
-    [status, user, token, login, register, logout],
+    () => ({ status, user, token, login, register, demoLogin, logout }),
+    [status, user, token, login, register, demoLogin, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

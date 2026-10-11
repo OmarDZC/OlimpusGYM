@@ -43,7 +43,8 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/public/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/demo-login")
+                .permitAll()
                 // Solo OWNER (p. ej. cambiar el plan de un socio, ver ingresos: LOGIC.md §2).
                 .requestMatchers("/api/v1/admin/owner/**").hasRole("OWNER")
                 .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/members/*/plan").hasRole("OWNER")

@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
-import { ApiError, type PlanCode } from "@/lib/api";
+import { ApiError, fetchPublicConfig, type PlanCode } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { homeForRole, planOptions } from "@/lib/roles";
 
@@ -27,12 +27,14 @@ export default function AccesoPage() {
 function AccesoContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { status, user, login, register } = useAuth();
+  const { status, user, login, register, demoLogin } = useAuth();
 
   const [mode, setMode] = useState<Mode>(searchParams.get("modo") === "registro" ? "registro" : "login");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [demoMode, setDemoMode] = useState(false);
+  const [demoSubmitting, setDemoSubmitting] = useState<"MEMBER" | "OWNER" | null>(null);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -49,6 +51,25 @@ function AccesoContent() {
       router.replace(homeForRole(user.role));
     }
   }, [status, user, router]);
+
+  useEffect(() => {
+    fetchPublicConfig()
+      .then((config) => setDemoMode(config.demoMode))
+      .catch(() => setDemoMode(false));
+  }, []);
+
+  async function handleDemoLogin(role: "MEMBER" | "OWNER") {
+    setFormError(null);
+    setDemoSubmitting(role);
+    try {
+      const signedInUser = await demoLogin(role);
+      router.replace(homeForRole(signedInUser.role));
+    } catch {
+      setFormError("No se pudo iniciar la sesión de demostración. Inténtalo de nuevo.");
+    } finally {
+      setDemoSubmitting(null);
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -92,6 +113,12 @@ function AccesoContent() {
 
       <section className="order-1 lg:order-2">
         <Card className="mx-auto w-full max-w-md">
+          {demoMode && (
+            <p className="mb-6 rounded-control border border-accent/40 bg-accent/10 px-3.5 py-2.5 text-sm text-text">
+              Demostración: los datos son de ejemplo y se reinician cada noche.
+            </p>
+          )}
+
           <div role="tablist" aria-label="Acceso a tu cuenta" className="mb-6 grid grid-cols-2 gap-1 rounded-control bg-surface-2 p-1">
             <button
               type="button"
@@ -185,6 +212,29 @@ function AccesoContent() {
               {submitting ? "Un momento..." : mode === "login" ? "Entrar a mi cuenta" : "Crear mi cuenta"}
             </Button>
           </form>
+
+          {demoMode && (
+            <div className="mt-6 flex flex-col gap-2 border-t border-border pt-6">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={demoSubmitting !== null}
+                onClick={() => handleDemoLogin("MEMBER")}
+                className="w-full"
+              >
+                {demoSubmitting === "MEMBER" ? "Un momento..." : "Entrar como socio de demostración"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={demoSubmitting !== null}
+                onClick={() => handleDemoLogin("OWNER")}
+                className="w-full"
+              >
+                {demoSubmitting === "OWNER" ? "Un momento..." : "Entrar como dueño de demostración"}
+              </Button>
+            </div>
+          )}
         </Card>
       </section>
     </main>
