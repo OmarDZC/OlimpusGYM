@@ -10,6 +10,7 @@ import com.gymflow.plan.Plan;
 import com.gymflow.plan.PlanRepository;
 import com.gymflow.workout.ai.AiWeeklyPlan;
 import com.gymflow.workout.ai.TrainerClient;
+import com.gymflow.workout.dto.DayProgress;
 import com.gymflow.workout.dto.ExerciseProgress;
 import com.gymflow.workout.dto.GenerateWorkoutRequest;
 import com.gymflow.workout.dto.LogSetRequest;
@@ -19,6 +20,7 @@ import com.gymflow.workout.dto.SetProgress;
 import com.gymflow.workout.dto.StreakDay;
 import com.gymflow.workout.dto.StreakResponse;
 import com.gymflow.workout.dto.TodayWorkoutResponse;
+import com.gymflow.workout.dto.WeekWorkoutResponse;
 import com.gymflow.workout.dto.WeeklyPlan;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
@@ -131,7 +133,9 @@ public class WorkoutService {
         WeeklyPlan weeklyPlan = parse(plan.getPlanJson());
         PlanDay day = dayByIndex(weeklyPlan, todayIndex);
         if (day == null || day.restDay()) {
-            return TodayWorkoutResponse.rest(todayIndex, DAY_LABELS[todayIndex]);
+            PlanDay next = nextTrainingDay(weeklyPlan, todayIndex);
+            return TodayWorkoutResponse.rest(
+                    todayIndex, DAY_LABELS[todayIndex], next != null ? next.label() : null, next != null ? next.focus() : null);
         }
 
         Map<String, WorkoutLog> loggedBySetKey = logs.findByWorkoutPlanIdAndDayIndex(plan.getId(), todayIndex).stream()
@@ -140,7 +144,61 @@ public class WorkoutService {
         List<ExerciseProgress> exercises =
                 day.exercises().stream().map(exercise -> toProgress(exercise, loggedBySetKey)).toList();
 
-        return new TodayWorkoutResponse(true, false, todayIndex, day.label(), day.focus(), exercises);
+        return new TodayWorkoutResponse(true, false, todayIndex, day.label(), day.focus(), exercises, null, null);
+    }
+
+    /** El próximo día de entrenamiento después de hoy, dando una vuelta a la semana si hace
+     * falta (p. ej. hoy sábado, el próximo es el lunes). {@code null} si la semana entera es
+     * descanso (rutinas muy ligeras) o no hay ningún otro día con ejercicios. */
+    private PlanDay nextTrainingDay(WeeklyPlan weeklyPlan, int todayIndex) {
+        for (int offset = 1; offset <= 7; offset++) {
+            int candidateIndex = (todayIndex + offset) % 7;
+            PlanDay candidate = dayByIndex(weeklyPlan, candidateIndex);
+            if (candidate != null && !candidate.restDay()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * La rutina semanal vigente completa, día por día (Trozo 9d, "Mi entrenamiento"): a
+     * diferencia de {@link #getToday}, nunca "no hay nada que mostrar" por ser fin de semana o
+     * descanso — se ve la semana entera, con hoy resaltado por {@code todayIndex}. "Hoy" es
+     * siempre el día de la semana de calendario real (lunes=0...domingo=6): si la rutina se
+     * generó a mitad de semana con menos de 7 días de entrenamiento, los días de calendario
+     * que la IA no llenó se tratan como descanso, nunca como "sin rutina" (ver
+     * {@code docs/LOGIC.md} §6).
+     */
+    @Transactional(readOnly = true)
+    public WeekWorkoutResponse getWeek(UUID tenantId, UUID userId) {
+        LocalDate today = LocalDate.now(MEMBER_ZONE);
+        int todayIndex = dayIndexOf(today);
+        WorkoutPlan plan = currentPlan(tenantId, userId, today).orElse(null);
+        if (plan == null) {
+            return WeekWorkoutResponse.noPlan(todayIndex);
+        }
+
+        WeeklyPlan weeklyPlan = parse(plan.getPlanJson());
+        Map<String, WorkoutLog> loggedBySetKey = logs.findByWorkoutPlanId(plan.getId()).stream()
+                .collect(Collectors.toMap(
+                        l -> l.getDayIndex() + ":" + l.getExerciseIndex() + ":" + l.getSetIndex(), l -> l));
+
+        List<DayProgress> days = IntStream.range(0, 7)
+                .mapToObj(dayIndex -> {
+                    PlanDay day = dayByIndex(weeklyPlan, dayIndex);
+                    if (day == null || day.restDay()) {
+                        String label = day != null ? day.label() : DAY_LABELS[dayIndex];
+                        return new DayProgress(dayIndex, label, null, true, List.of());
+                    }
+                    List<ExerciseProgress> exercises = day.exercises().stream()
+                            .map(exercise -> toProgressForDay(dayIndex, exercise, loggedBySetKey))
+                            .toList();
+                    return new DayProgress(dayIndex, day.label(), day.focus(), false, exercises);
+                })
+                .toList();
+
+        return new WeekWorkoutResponse(true, todayIndex, days);
     }
 
     @Transactional(readOnly = true)
@@ -217,6 +275,20 @@ public class WorkoutService {
     private Optional<WorkoutPlan> currentPlan(UUID tenantId, UUID userId, LocalDate today) {
         LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         return plans.findByTenantIdAndUserIdAndWeekStart(tenantId, userId, weekStart);
+    }
+
+    /** Igual que {@link #toProgress}, pero con la clave de búsqueda cualificada por día: para
+     * la semana completa, el mismo índice de ejercicio se repite en varios días. */
+    private ExerciseProgress toProgressForDay(int dayIndex, PlanExercise exercise, Map<String, WorkoutLog> loggedBySetKey) {
+        List<SetProgress> sets = IntStream.range(0, exercise.sets())
+                .mapToObj(setIndex -> {
+                    WorkoutLog log = loggedBySetKey.get(dayIndex + ":" + exercise.exerciseIndex() + ":" + setIndex);
+                    return new SetProgress(setIndex, log != null && log.isDone());
+                })
+                .toList();
+        return new ExerciseProgress(
+                exercise.exerciseIndex(), exercise.name(), exercise.reps(), exercise.weightKg(),
+                exercise.restSeconds(), exercise.note(), sets);
     }
 
     private ExerciseProgress toProgress(PlanExercise exercise, Map<String, WorkoutLog> loggedBySetKey) {

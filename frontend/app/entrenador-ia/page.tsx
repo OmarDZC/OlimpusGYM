@@ -263,10 +263,10 @@ export default function EntrenadorIaPage() {
               ))}
 
               <p className="text-sm text-text-muted">
-                Ya puedes verla y marcar tus series desde{" "}
-                <a href="/cuenta" className="text-accent-text hover:underline">
-                  Mi cuenta
-                </a>
+                Ya puedes verla y marcar tus series en{" "}
+                <Link href="/cuenta/entrenamiento" className="text-accent-text hover:underline">
+                  Ver en Mi entrenamiento
+                </Link>
                 .
               </p>
             </div>

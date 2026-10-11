@@ -83,7 +83,14 @@ export function TodayWorkoutCard() {
       <Card>
         <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{workout.dayLabel}</p>
         <p className="mt-2 font-display text-2xl font-bold uppercase tracking-tight">Hoy toca descanso</p>
-        <p className="mt-1 text-sm text-text-muted">Aprovecha para recuperar: mañana sigue la rutina.</p>
+        <p className="mt-1 text-sm text-text-muted">
+          {workout.nextLabel
+            ? `Aprovecha para recuperar. ${workout.nextLabel}: ${workout.nextFocus ?? "toca entrenar"}.`
+            : "Aprovecha para recuperar."}
+        </p>
+        <Link href="/cuenta/entrenamiento" className="mt-2 inline-block text-sm text-accent-text hover:underline">
+          Ver la rutina completa
+        </Link>
       </Card>
     );
   }
@@ -96,6 +103,9 @@ export function TodayWorkoutCard() {
           <p className="mt-2 font-display text-2xl font-bold uppercase tracking-tight">{workout.dayLabel}</p>
           <p className="text-sm text-text-muted">{workout.focus}</p>
         </div>
+        <Link href="/cuenta/entrenamiento" className="text-sm text-accent-text hover:underline">
+          Ver toda la semana
+        </Link>
       </div>
 
       {error && (

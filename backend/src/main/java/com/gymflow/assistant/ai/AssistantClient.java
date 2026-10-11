@@ -36,7 +36,10 @@ public class AssistantClient {
 
     public AssistantChatResponse chat(String memberToken, AssistantChatRequest request) {
         AiAssistantChatRequest body = new AiAssistantChatRequest(
-                toAiMessages(request.messages()), memberToken, toAiAction(request.confirmAction()));
+                toAiMessages(request.messages()),
+                memberToken,
+                toAiAction(request.confirmAction()),
+                request.contextOptionIds() != null ? request.contextOptionIds() : List.of());
         try {
             AiAssistantChatResponse response = restClient.post()
                     .uri("/v1/assistant/chat")
@@ -92,7 +95,8 @@ public class AssistantClient {
         List<ScheduleOptionDto> options = response.options() == null
                 ? null
                 : response.options().stream().map(this::toOptionDto).toList();
-        return new AssistantChatResponse(response.reply(), toDto(response.pendingAction()), options);
+        List<String> contextOptionIds = response.contextOptionIds() != null ? response.contextOptionIds() : List.of();
+        return new AssistantChatResponse(response.reply(), toDto(response.pendingAction()), options, contextOptionIds);
     }
 
     private PendingActionDto toDto(AiPendingAction action) {

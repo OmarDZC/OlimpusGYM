@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime
 
@@ -635,3 +636,176 @@ def test_no_reintenta_ante_400():
     )
     assert r.status_code == 503
     assert llm.calls == 1
+
+
+# ---- Fallos reales de pulido (Trozo 9d): hora en Madrid, tarjetas siempre, atajo de "sí" ----
+
+
+def test_el_modelo_nunca_ve_la_hora_en_iso_ni_utc_cruda():
+    # Visto con el modelo real: con el ISO-8601 en UTC crudo, el modelo repetía la hora sin
+    # convertir a Madrid (2 horas por detrás en octubre). Lo que debe ver es "cuando" ya en
+    # español llano, nunca "startsAt" con el ISO.
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([tool_call("listar_clases"), text("Hay una clase.")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "¿Hay yoga?"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    tool_message = next(m for m in llm.received_calls[-1]["messages"] if m["role"] == "tool")
+    payload = json.loads(tool_message["content"])
+    assert "startsAt" not in payload[0]
+    assert "2026-10-13T" not in tool_message["content"]
+    assert payload[0]["cuando"] == "martes 13 de octubre a las 19:00"
+
+
+def test_las_tarjetas_se_incluyen_aunque_solo_haya_una_clase():
+    # Antes: con una sola candidata, "options" se dejaba en None (solo se mandaba con 2+), y el
+    # modelo preguntaba "¿quieres que te la reserve?" en texto, sin ningún botón. Ahora es
+    # estructural: si listar_clases trajo algo, hay tarjeta, sin mirar lo que diga el modelo.
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([tool_call("listar_clases"), text("¿Quieres que te la reserve?")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "¿Hay yoga mañana?"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["options"] is not None and len(body["options"]) == 1
+    assert body["options"][0]["id"] == "sess-1"
+    assert body["context_option_ids"] == ["sess-1"]
+
+
+def test_la_respuesta_no_repite_la_hora_cuando_ya_hay_tarjeta():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient(
+        [tool_call("listar_clases"), text("Hay yoga a las 19:00, ¿quieres que te la reserve?")]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "¿Hay yoga mañana?"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    assert "19:00" not in r.json()["reply"]
+
+
+def test_responder_si_con_una_sola_tarjeta_propone_sin_hablar_con_el_modelo():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([])  # si se llamara al modelo, el guion vacío lo delataría
+
+    _override(llm=llm, gymflow=gymflow)
+    r = client.post(
+        "/v1/assistant/chat",
+        json={
+            "messages": [
+                {"role": "user", "content": "¿Hay yoga mañana?"},
+                {"role": "assistant", "content": "Sí, hay una clase."},
+                {"role": "user", "content": "sí"},
+            ],
+            "member_token": MEMBER_TOKEN,
+            "context_option_ids": ["sess-1"],
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pending_action"]["type"] == "book"
+    assert body["pending_action"]["session_id"] == "sess-1"
+    assert llm.calls == 0
+
+
+def test_responder_vale_tambien_vale_como_si():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "vale"}],
+            "member_token": MEMBER_TOKEN,
+            "context_option_ids": ["sess-1"],
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["pending_action"]["session_id"] == "sess-1"
+
+
+def test_responder_si_revalida_el_id_contra_el_backend_real():
+    # La clase del contexto ya no existe (p. ej. se llenó o se canceló entre medias): no se
+    # confía en el id solo porque lo mandara el cliente.
+    gymflow = FakeGymflowClient(sessions=[])
+    llm = ScriptedToolCallingClient([])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "sí"}],
+            "member_token": MEMBER_TOKEN,
+            "context_option_ids": ["sess-1"],
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pending_action"] is None
+    assert "no encuentro" in body["reply"].lower()
+    assert llm.calls == 0
+
+
+def test_si_con_mas_de_una_tarjeta_en_contexto_no_activa_el_atajo():
+    # Con varias candidatas no hay una elección obvia: "sí" sigue yendo al modelo, como antes.
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([text("¿Cuál de las dos?")])
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "sí"}],
+            "member_token": MEMBER_TOKEN,
+            "context_option_ids": ["sess-1", "sess-2"],
+        },
+    )
+    assert r.status_code == 200
+    assert llm.calls == 1
+
+
+# ---- Límite de peticiones del proveedor (429) distinto de proveedor caído (Trozo 9d) ----
+
+
+def test_429_agotando_reintentos_da_mensaje_de_limite_no_de_caida(monkeypatch):
+    monkeypatch.setattr("app.assistant.time_module.sleep", lambda _seconds: None)
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient(
+        [fail(make_status_error(429)), fail(make_status_error(429)), fail(make_status_error(429))]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "hola"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 429
+    assert "límite" in r.json()["detail"].lower()
+    assert "inténtalo de nuevo en unos minutos" not in r.json()["detail"].lower()
+
+
+def test_500_agotando_reintentos_sigue_dando_el_mensaje_de_caida():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient(
+        [fail(make_status_error(500)), fail(make_status_error(500)), fail(make_status_error(500))]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "hola"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 503
+    assert "no está disponible" in r.json()["detail"].lower()

@@ -13,6 +13,29 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 9d - Pulido del asistente y del entrenamiento (2026-10-11)
+- Hecho: asistente — hora siempre en español/Madrid hacia el modelo (antes veía el ISO en UTC
+  crudo y lo repetía sin convertir); tarjetas siempre que listar_clases trae resultados (antes
+  solo con 2+, causa real del "¿quieres que te la reserve?" sin botón); "sí/vale/ok" con una
+  sola tarjeta en contexto reserva sin llamar al modelo (id revalidado contra el backend);
+  429 del proveedor distinto de "proveedor caído" (mensaje y código propios). El "no disponible"
+  al responder "sí" reproducido de verdad: era el límite de peticiones de Groq agotando los
+  reintentos, no falta de contexto entre turnos (causa distinta a la sospechada).
+  Entrenamiento — `/cuenta/entrenamiento` mostraba solo un botón, sin la rutina (confirmado
+  real); ahora enseña la semana completa con casillas (`GET /me/workout/week`, nuevo). El
+  descanso en Inicio ahora dice qué toca el próximo día de entreno, con enlace a la semana
+  completa. No se pudo reproducir "Inicio dice que no tienes rutina" tras generar: tanto la
+  API como una navegación real en el navegador la muestran bien al momento; "hoy" se definió y
+  documentó en el Javadoc de `getWeek` (día de calendario real, descanso si la IA no llenó ese
+  día).
+- Pendiente: test e2e de generar+ver rutina (el LLM simulado de `e2e/fake-llm` solo sabe seguir
+  el guion del asistente, no genera planes de entrenador; extenderlo no entraba en esta tarea).
+- Tests: `pytest` ai-service 50/50; `mvn test` backend 124 tests, 0 fallos (105 omitidos sin
+  Docker, incluidos los nuevos); `npm run build` en verde. Verificado también contra el modelo
+  real (Groq) y en el navegador contra el stack real.
+
+---
+
 ### Trozo 8a-2 (commit 2 de 2) - Producción: seguridad operativa y límite de IA (2026-10-11)
 - Hecho:
   - **Copias de seguridad**: `scripts/backup-db.sh` (`pg_dump -Fc`, formato "custom",
