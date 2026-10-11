@@ -1,10 +1,15 @@
 """Generación de la rutina semanal con el LLM (LOGIC.md §7).
 
-Pide JSON al modelo, lo valida con Pydantic y reintenta hasta 2 veces más (3 intentos en
-total) devolviendo al modelo el motivo exacto por el que la respuesta anterior no sirve.
-Cualquier fallo al *hablar* con el proveedor (red, autenticación, lo que sea) se trata como
-"no disponible" (503); una respuesta que, tras los reintentos, sigue sin ser un plan válido
-se trata como "no se pudo generar" (502). Nunca llama a un proveedor real en los tests: el
+Pide JSON al modelo, lo valida con Pydantic y, si no es válido, reintenta UNA vez más (2
+intentos en total — antes eran 3: con proveedores de cupo de salida pequeño, como Groq en
+capa gratuita, cada intento pide de nuevo una rutina entera y el tercero ya no cabía en el
+cupo por minuto, ver docs/PROGRESS.md) devolviendo al modelo el motivo exacto, corto, por el
+que la respuesta anterior no sirve. Un fallo al *hablar* con el proveedor (red, 401, 429...)
+se reintenta con `app/llm_retry.py` (con respaldo opcional) antes de darse por vencido: un 429
+que agota los reintentos se trata como "saturado" (429 también hacia el socio, mensaje
+distinto de "no disponible"); cualquier otro fallo de comunicación, como "no disponible"
+(503). Una respuesta que, tras el reintento de validación, sigue sin ser un plan válido se
+trata como "no se pudo generar" (502). Nunca llama a un proveedor real en los tests: el
 cliente se recibe como parámetro (ver `app/main.py`, que lo inyecta con `Depends`).
 """
 
@@ -15,12 +20,25 @@ import logging
 
 from pydantic import ValidationError
 
-from app.config import settings
+from app.llm_retry import call_with_retry_and_fallback, is_rate_limited
 from app.schemas import Goal, Level, PlanRequest, WeeklyPlan
 
 logger = logging.getLogger(__name__)
 
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 2
+# Una rutina con muchos días/ejercicios ya pide varios cientos de tokens de salida; sin un
+# tope, el modelo puede alargarse (notas largas, más ejercicios de la cuenta) y agotar cupos
+# de salida por minuto muy pequeños (visto de verdad con Groq: límite de 1000 tokens/min en el
+# modelo gratuito, y una rutina de 5 días ya pedía más de 1000 solo para el primer intento).
+# Un tope fijo cortaba a mitad de JSON las rutinas de más días (visto de verdad: "Expecting
+# value" al parsear, JSON incompleto) y encima gastaba el reintento sin necesidad; por eso
+# escala con los días pedidos, con margen de sobra sobre lo que de verdad hace falta.
+BASE_OUTPUT_TOKENS = 150
+OUTPUT_TOKENS_PER_DAY = 260
+
+
+def _max_output_tokens(days_per_week: int) -> int:
+    return BASE_OUTPUT_TOKENS + OUTPUT_TOKENS_PER_DAY * days_per_week
 
 GOAL_ES = {
     Goal.HYPERTROPHY: "ganar volumen muscular (hipertrofia)",
@@ -66,12 +84,19 @@ Reglas:
 cuando sustituyas algo por eso.
 - El volumen (series y ejercicios por día) debe ser razonable para el nivel indicado: menos y más \
 simple para principiante, más para avanzado.
-- Texto siempre en español llano: nada de jerga sin explicar ni palabras sueltas en inglés.
+- "notes": como mucho una frase muy corta, o null si no aporta nada; nunca un párrafo.
+- Texto siempre en español llano: nada de jerga sin explicar ni palabras sueltas en inglés. Sin \
+texto de relleno: solo lo que pide el JSON.
 """
 
 
 class LlmUnavailableError(Exception):
     """El proveedor de LLM no respondió (red, autenticación, lo que sea). El cliente ve un 503."""
+
+
+class LlmRateLimitedError(LlmUnavailableError):
+    """429 agotando los reintentos (y el respaldo, si lo hay): no es que el proveedor esté
+    caído, es que hay que esperar un poco. El cliente ve un 429, no un 503."""
 
 
 class LlmInvalidOutputError(Exception):
@@ -132,18 +157,18 @@ def _parse_and_validate(content: str, request: PlanRequest) -> WeeklyPlan:
     return plan
 
 
-def generate_plan(client, request: PlanRequest) -> WeeklyPlan:
+def generate_plan(client, model: str, request: PlanRequest) -> WeeklyPlan:
     previous_error: str | None = None
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
         messages = _build_messages(request, previous_error)
         try:
-            response = client.chat.completions.create(
-                model=settings.llm_model,
-                messages=messages,
-                temperature=0.4,
+            response = call_with_retry_and_fallback(
+                client, model, messages=messages, temperature=0.4, max_tokens=_max_output_tokens(request.days_per_week)
             )
-        except Exception as exc:  # cualquier fallo al hablar con el proveedor: red, 401, timeout...
+        except Exception as exc:  # cualquier fallo al hablar con el proveedor: red, 401, 429...
+            if is_rate_limited(exc):
+                raise LlmRateLimitedError(str(exc)) from exc
             raise LlmUnavailableError(str(exc)) from exc
 
         content = response.choices[0].message.content or ""

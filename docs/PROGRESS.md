@@ -13,6 +13,30 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 9e - Seguimiento vago sin tarjetas y 429 del entrenador (2026-10-11)
+- Hecho: asistente — la regla "no repitas la hora" del Trozo 9d era una sobrecorrección: ahora
+  exige hora exacta en 24h y llamar siempre a listar_clases para preguntas de horario; el
+  servidor sustituye la respuesta por una generada de los datos reales si menciona una hora
+  que no coincide con ninguna clase real; las preguntas de seguimiento contestadas desde el
+  contexto (sin volver a llamar a la herramienta) revalidan y reatachan las tarjetas de antes.
+  Entrenador — causa real de la tercera generación fallando: Groq, límite de 1000 tokens de
+  salida por minuto, y una rutina de 5 días ya pedía ~1081 solo en el primer intento (sin
+  max_tokens antes). Arreglado: 429 con mensaje y código propios ("El servicio de IA está
+  saturado..."), igual que el asistente; máximo 1 reintento de validación (antes 2); max_tokens
+  que escala con los días pedidos (un tope fijo cortaba el JSON a mitad, visto de verdad);
+  proveedor de respaldo opcional (`LLM_FALLBACK_*`, compartido entrenador+asistente,
+  `app/llm_retry.py`); botón del entrenador desactivado 45 s tras generar, con cuenta atrás.
+  Descubierto y arreglado de paso: el backend nunca distinguía el 429 del asistente de un 503
+  genérico (gap del Trozo 9d, `AssistantClient`/`TrainerClient` ahora sí).
+- Pendiente: probar el respaldo con un segundo proveedor real (solo probado con el LLM
+  simulado en tests; no hay una segunda clave real disponible en esta sesión).
+- Tests: pytest ai-service 57/57; `mvn test` backend 126/0 fallos (107 omitidos sin Docker);
+  `npm run build` verde. Verificado también contra Groq real (hora exacta y tarjetas en
+  seguimiento confirmadas; 429 real reproducido dos veces, con el mensaje nuevo mostrándose en
+  el navegador de verdad) y backend recompilado y probado contra el stack real.
+
+---
+
 ### Trozo 9d - Pulido del asistente y del entrenamiento (2026-10-11)
 - Hecho: asistente — hora siempre en español/Madrid hacia el modelo (antes veía el ISO en UTC
   crudo y lo repetía sin convertir); tarjetas siempre que listar_clases trae resultados (antes

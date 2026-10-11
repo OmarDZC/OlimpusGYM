@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gymflow.assistant.ai.AssistantClient;
 import com.gymflow.assistant.ai.AssistantFailedException;
+import com.gymflow.assistant.ai.AssistantRateLimitedException;
 import com.gymflow.assistant.ai.AssistantUnavailableException;
 import com.gymflow.assistant.dto.AssistantChatRequest;
 import com.gymflow.assistant.dto.AssistantChatResponse;
@@ -161,6 +162,21 @@ class AssistantHttpTest {
         mvc.perform(post("/api/v1/me/assistant/chat").header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON).content(chatBody("hola")))
             .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void chatReturns429WithAClearMessageWhenTheProviderIsRateLimited() throws Exception {
+        createMemberWithMembership("ia.saturada@test.local", planWithAssistant);
+        String token = loginAndGetToken("ia.saturada@test.local");
+        Mockito.when(assistantClient.chat(Mockito.eq(token), Mockito.any()))
+            .thenThrow(new AssistantRateLimitedException(
+                "El asistente ha alcanzado su límite de peticiones por ahora. Espera un momento y vuelve a intentarlo."));
+
+        mvc.perform(post("/api/v1/me/assistant/chat").header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON).content(chatBody("hola")))
+            .andExpect(status().isTooManyRequests())
+            .andExpect(jsonPath("$.detail").value(
+                "El asistente ha alcanzado su límite de peticiones por ahora. Espera un momento y vuelve a intentarlo."));
     }
 
     @Test

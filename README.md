@@ -85,6 +85,22 @@ docker compose exec ollama ollama pull llama3.1:8b
 Los modelos gratuitos y sus límites cambian con el tiempo: consulta la web de cada proveedor
 antes de fijar `LLM_MODEL`.
 
+### Proveedor de IA de respaldo (opcional)
+
+Las capas gratuitas tienen cupos pequeños: con Groq, por ejemplo, una sola rutina de varios
+días ya puede agotar el límite de tokens de salida por minuto. `LLM_FALLBACK_BASE_URL`,
+`LLM_FALLBACK_API_KEY` y `LLM_FALLBACK_MODEL` (vacías por defecto) activan un segundo
+proveedor: si el principal agota sus reintentos con un 429 (límite de peticiones) o un 5xx,
+se prueba una vez ahí antes de darse por vencido, tanto en el entrenador como en el
+asistente. Sin estas variables, el comportamiento es el de siempre (solo el principal).
+
+```bash
+# En .env, con Google Gemini como respaldo de Groq:
+LLM_FALLBACK_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+LLM_FALLBACK_API_KEY=tu_clave_de_gemini
+LLM_FALLBACK_MODEL=gemini-2.0-flash   # o el modelo disponible en tu cuenta
+```
+
 ### Probar el asistente de reservas con un proveedor real (ejemplo con Groq)
 
 El asistente (`/horario` → botón "Reservar con IA") usa el mismo cliente y las mismas
@@ -197,6 +213,7 @@ inválidas, ver `ProductionSecretsValidator`):
 | `REDIS_PASSWORD` | Sin valor de ejemplo: ponlo tú (`openssl rand -base64 24`) |
 | `JWT_SECRET` | Mínimo 32 caracteres, aleatorio y distinto del valor de ejemplo del repo (`openssl rand -base64 48`) |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | El mismo proveedor compatible con OpenAI que en desarrollo (ver más arriba) |
+| `LLM_FALLBACK_BASE_URL` / `LLM_FALLBACK_API_KEY` / `LLM_FALLBACK_MODEL` (opcionales) | Proveedor de respaldo si el principal se satura (ver "Proveedor de IA de respaldo" más arriba) |
 | `SPRING_PROFILES_ACTIVE` | `prod` (por defecto) o `demo` |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Solo con `SPRING_PROFILES_ACTIVE=prod`: el OWNER real del gimnasio (mínimo 12 caracteres en la contraseña) |
 | `DEMO_OWNER_PASSWORD` / `DEMO_MEMBER_PASSWORD` | Solo con `SPRING_PROFILES_ACTIVE=demo`: contraseñas fuertes para los botones de demo (`openssl rand -base64 18`) |

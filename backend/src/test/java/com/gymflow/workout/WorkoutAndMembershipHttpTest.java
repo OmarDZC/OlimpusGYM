@@ -23,6 +23,7 @@ import com.gymflow.workout.ai.AiDay;
 import com.gymflow.workout.ai.AiExercise;
 import com.gymflow.workout.ai.AiWeeklyPlan;
 import com.gymflow.workout.ai.TrainerClient;
+import com.gymflow.workout.ai.TrainerRateLimitedException;
 import com.gymflow.workout.ai.TrainerUnavailableException;
 import com.gymflow.workout.dto.GenerateWorkoutRequest;
 import com.gymflow.workout.dto.LogSetRequest;
@@ -393,6 +394,22 @@ class WorkoutAndMembershipHttpTest {
         mvc.perform(post("/api/v1/me/workout/generate").header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void generateReturns429WithAClearMessageWhenTheProviderIsRateLimited() throws Exception {
+        createMemberWithMembership("ia.saturada@test.local");
+        String token = loginAndGetToken("ia.saturada@test.local");
+        Mockito.when(trainerClient.generatePlan(Mockito.any()))
+            .thenThrow(new TrainerRateLimitedException("El servicio de IA está saturado, inténtalo de nuevo en un minuto."));
+
+        String body = objectMapper.writeValueAsString(
+            new GenerateWorkoutRequest("strength", "advanced", 3, List.of(), List.of()));
+
+        mvc.perform(post("/api/v1/me/workout/generate").header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isTooManyRequests())
+            .andExpect(jsonPath("$.detail").value("El servicio de IA está saturado, inténtalo de nuevo en un minuto."));
     }
 
     @Test
