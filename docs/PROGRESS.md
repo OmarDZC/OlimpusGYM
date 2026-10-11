@@ -63,13 +63,13 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
     propósito (uno es el host/IP que ve Caddy, el otro la URL completa con esquema que
     necesitan el frontend en build y CORS en el backend) para no tener que asumir que el
     esquema siempre es `https://`.
-  - **El backend se niega a arrancar fuera de dev/demo** si `JWT_SECRET` falta, mide menos de
+  - **El backend se niega a arrancar en producción** si `JWT_SECRET` falta, mide menos de
     32 caracteres o es exactamente el valor de ejemplo del repo (`ProductionSecretsValidator`,
-    `@Profile("!dev & !demo")`, `@PostConstruct`). Verificado de verdad arrancando el backend
+    `@Profile("prod")`, `@PostConstruct`). Verificado de verdad arrancando el backend
     de producción con el secreto de ejemplo: falla con
     `IllegalStateException: GYMFLOW_JWT_SECRET sigue siendo el valor de ejemplo del
     repositorio...` y no llega a levantar el puerto.
-  - **`ProductionAdminSeeder`** (`@Profile("!dev & !demo")`, igual que `ProductionSecretsValidator`
+  - **`ProductionAdminSeeder`** (`@Profile("prod")`, igual que `ProductionSecretsValidator`
     y lo contrario de `DevDataSeeder`, que es `@Profile({"dev","demo"})`): crea el tenant único
     si no existe y, si no hay ya un usuario con el correo de `ADMIN_EMAIL`, lo da de alta como
     OWNER con `ADMIN_PASSWORD` (mínimo 12 caracteres, si no, tampoco arranca). Idempotente: en
@@ -131,6 +131,28 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
     nuevos y el usuario sin privilegios del frontend no rompen nada fuera de producción: los 5
     servicios de dev llegan a `healthy`, login probado, y los 41 tests de `ai-service` y los
     31 end-to-end (contra el stack sin RabbitMQ, igual que correrá la CI) en verde.
+- **Arreglo tras un fallo real en la CI** (no se vio en esta máquina: los tests con
+  Testcontainers del backend no pueden ejecutarse aquí, ver "Pendiente" del Trozo 9c commit 1 —
+  exactamente el tipo de fallo que esa limitación deja pasar hasta que corre en una CI con
+  Docker de verdad). `ProductionSecretsValidator` y `ProductionAdminSeeder` se escribieron con
+  `@Profile("!dev & !demo")`, pensado como "cualquier perfil que no sea de ejemplo". Pero la
+  mayoría de los tests del backend con `@SpringBootTest` no activan ningún perfil en absoluto
+  (ni "dev" ni "demo" ni "prod"): para Spring, "ningún perfil activo" tampoco es "dev" ni
+  "demo", así que esa expresión también los capturaba a ellos, y como no tienen un
+  `GYMFLOW_JWT_SECRET` real configurado, `ProductionSecretsValidator` los tumbaba a todos en el
+  arranque del contexto. 84 de 100 tests del backend en rojo en la CI real (todos los que usan
+  `@SpringBootTest`, incluido el propio `DevDataSeederProductionProfileTest`, que sí fija
+  `@ActiveProfiles("prod")` pero no un secreto). Arreglado cambiando ambas anotaciones a
+  `@Profile("prod")` a secas: en este proyecto solo existen los perfiles "dev", "demo" y "prod"
+  (comprobado buscando `@Profile`/`@ActiveProfiles` en todo `backend/src`), así que no hace
+  falta la negación — y de paso `DevDataSeederProductionProfileTest` necesitó que se le diera
+  un `gymflow.jwt.secret`/`gymflow.admin.email`/`gymflow.admin.password` de prueba por
+  `@DynamicPropertySource`, ya que con el perfil "prod" activo esos dos componentes nuevos
+  también arrancan ahí. Verificado localmente que el fallo desaparece (ya no hay ninguna
+  mención a "GYMFLOW_JWT_SECRET sigue siendo el valor de ejemplo" en una tanda completa de
+  `mvn test`: los 84 errores que quedan son exactamente los mismos, con el mismo motivo
+  (Docker-en-Docker), que antes de añadir estos dos componentes) y que los 8 tests unitarios
+  nuevos (sin Testcontainers) siguen en verde.
 - Decisiones / simplificaciones:
   - `DOMAIN` (host/IP para Caddy) y `PUBLIC_URL` (URL completa con esquema para CORS y el
     build del frontend) son dos variables separadas a propósito, aunque se pisen en el caso

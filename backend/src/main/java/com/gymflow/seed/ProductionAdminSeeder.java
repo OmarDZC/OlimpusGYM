@@ -15,15 +15,20 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Administrador real de producción (Trozo 8a-1): fuera de dev/demo no hay seed de ejemplo
+ * Administrador real de producción (Trozo 8a-1): en producción no hay seed de ejemplo
  * (ver {@link DevDataSeeder}), así que sin esto no habría ninguna cuenta OWNER con la que
  * entrar la primera vez. Crea el tenant único si todavía no existe y, si no hay ya un usuario
  * con el correo de {@code GYMFLOW_ADMIN_EMAIL}, lo da de alta como OWNER con
  * {@code GYMFLOW_ADMIN_PASSWORD}. Idempotente: en arranques siguientes no hace nada si la
  * cuenta ya existe.
+ *
+ * <p>Atado al perfil "prod" en concreto (ver {@link com.gymflow.config.ProductionSecretsValidator}
+ * para por qué "!dev &amp; !demo" rompía los tests con Testcontainers, que no activan ningún
+ * perfil): con ese mismo motivo, este seeder también se habría intentado ejecutar ahí y habría
+ * fallado por falta de GYMFLOW_ADMIN_EMAIL/GYMFLOW_ADMIN_PASSWORD.
  */
 @Component
-@Profile("!dev & !demo")
+@Profile("prod")
 public class ProductionAdminSeeder implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(ProductionAdminSeeder.class);
