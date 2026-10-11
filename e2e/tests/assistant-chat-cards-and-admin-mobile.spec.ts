@@ -45,8 +45,10 @@ test.describe("Chat del asistente en móvil", () => {
     await dialog.getByLabel("Escribe tu mensaje").fill(`Resérvame la clase ${session.name}`);
     await dialog.getByRole("button", { name: "Enviar" }).click();
 
-    // Tarjeta de propuesta con los datos reales de la clase (no solo una frase del modelo).
-    await expect(dialog.getByText(session.name, { exact: false })).toBeVisible({ timeout: 15_000 });
+    // Tarjeta de propuesta con los datos reales de la clase (no solo una frase del modelo). El
+    // nombre de la clase no sirve para localizarla sin ambigüedad: el mensaje del socio, que ya
+    // lo incluye, también hace match. "Confirmar" y la sala solo existen en la tarjeta.
+    await expect(dialog.getByRole("button", { name: "Confirmar" })).toBeVisible({ timeout: 15_000 });
     await expect(dialog.getByText("Sala E2E")).toBeVisible();
     await expect(dialog.getByText(/plazas libres/)).toBeVisible();
 

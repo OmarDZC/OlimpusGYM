@@ -158,7 +158,8 @@ class _ScriptedCompletions:
     def __init__(self, outer: "ScriptedToolCallingClient") -> None:
         self._outer = outer
 
-    def create(self, **_kwargs):
+    def create(self, **kwargs):
+        self._outer.received_calls.append(kwargs)
         return self._outer._next()
 
 
@@ -176,6 +177,7 @@ class ScriptedToolCallingClient:
     def __init__(self, script: list[tuple]) -> None:
         self._script = script
         self.calls = 0
+        self.received_calls: list[dict] = []
         self.chat = _ScriptedChat(self)
 
     def _next(self):
@@ -188,7 +190,12 @@ class ScriptedToolCallingClient:
         if kind == "text":
             message = _FakeAssistantMessage(content=payload, tool_calls=None)
         else:
-            tool_calls = [_FakeToolCall(f"call_{i}", name, args) for i, (name, args) in enumerate(payload)]
+            # El id incluye el número de paso (self.calls, ya incrementado) para que sea único
+            # en todo el guion, no solo dentro de esta llamada: dos pasos que llaman a la misma
+            # herramienta no deben acabar compartiendo tool_call_id.
+            tool_calls = [
+                _FakeToolCall(f"call_{self.calls}_{i}", name, args) for i, (name, args) in enumerate(payload)
+            ]
             message = _FakeAssistantMessage(content=None, tool_calls=tool_calls)
         choice = type("Choice", (), {"message": message})()
         return type("Completion", (), {"choices": [choice]})()

@@ -439,6 +439,191 @@ def test_no_reintenta_ante_401():
     assert llm.calls == 1
 
 
+# ---- Reintento cuando el modelo "propone" solo en texto, sin llamar a la herramienta ----
+
+
+def test_reintenta_y_fuerza_la_herramienta_cuando_hay_una_sola_candidata():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient(
+        [
+            tool_call("listar_clases"),
+            text("Voy a reservar Spinning el martes a las 17:00, ¿confirmas?"),
+            tool_call("reservar_clase", session_id="sess-1"),
+            text("Aquí tienes la clase."),
+        ]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Quiero reservar spinning"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pending_action"] is not None
+    assert body["pending_action"]["session_id"] == "sess-1"
+    assert llm.calls == 4
+    # Con una sola candidata real, el reintento no deja elegir: fuerza reservar_clase.
+    assert llm.received_calls[2]["tool_choice"] == {"type": "function", "function": {"name": "reservar_clase"}}
+    assert llm.received_calls[0]["tool_choice"] == "auto"
+    assert llm.received_calls[1]["tool_choice"] == "auto"
+
+
+def test_no_fuerza_reservar_si_la_pregunta_suena_a_cancelacion():
+    gymflow = FakeGymflowClient(sessions=[SESSION], bookings_by_token={MEMBER_TOKEN: [BOOKING]})
+    llm = ScriptedToolCallingClient(
+        [
+            tool_call("listar_clases"),
+            text("Voy a cancelar tu reserva de Spinning, ¿confirmas?"),
+            text("¿Confirmas que cancelo tu reserva?"),
+        ]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Cancela mi spinning"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    # No se fuerza reservar_clase solo porque haya una clase de por medio en listar_clases.
+    assert llm.received_calls[2]["tool_choice"] == "auto"
+
+
+def test_la_frase_sugerida_sin_llamar_a_la_herramienta_tambien_dispara_el_reintento():
+    # El propio mensaje de sistema sugiere "Esta es la clase que he encontrado" tras llamar a
+    # la herramienta; si el modelo se limita a repetir esa frase sin haberla llamado, es el
+    # mismo fallo con otras palabras y debe detectarse igual.
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient(
+        [
+            tool_call("listar_clases"),
+            text("Esta es la clase que he encontrado."),
+            tool_call("reservar_clase", session_id="sess-1"),
+            text("Esta es la clase que he encontrado."),
+        ]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Quiero reservar spinning"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    assert r.json()["pending_action"] is not None
+    assert llm.calls == 4
+
+
+def test_tras_el_segundo_fallo_se_devuelven_opciones_reales_sin_la_pregunta():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient(
+        [
+            tool_call("listar_clases"),
+            text("Voy a reservar Spinning, ¿confirmas?"),
+            text("¿Confirmas que reservo Spinning?"),
+        ]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Quiero reservar spinning"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reply"] == "Elige la clase que quieres reservar."
+    assert body["pending_action"] is None
+    assert body["options"] is not None and len(body["options"]) == 1
+    assert body["options"][0]["id"] == "sess-1"
+    assert llm.calls == 3
+
+
+def test_tras_el_segundo_fallo_sin_candidatas_pide_aclarar_en_vez_de_repetir_la_pregunta():
+    gymflow = FakeGymflowClient(sessions=[SESSION], bookings_by_token={MEMBER_TOKEN: [BOOKING]})
+    llm = ScriptedToolCallingClient(
+        [
+            text("Voy a cancelar tu reserva, ¿confirmas?"),
+            text("¿Confirmas que cancelo tu reserva?"),
+        ]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Cancela mi reserva"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reply"] == "No he podido completar la propuesta. Dime de nuevo qué clase quieres reservar o cancelar."
+    assert body["pending_action"] is None
+    assert body["options"] is None
+    assert llm.calls == 2
+
+
+def test_una_claim_de_reserva_ya_hecha_sin_herramienta_tambien_dispara_el_reintento():
+    # Visto con el modelo real: a veces dice "ya está reservada" sin haber llamado nunca a
+    # reservar_clase. Tampoco cuenta: no se ha ejecutado nada de verdad.
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient(
+        [
+            text("¡Hecho! Ya está reservada tu clase de Spinning."),
+            text("No he podido completarlo, vuelve a pedírmelo."),
+        ]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Resérvame spinning"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pending_action"] is None
+    assert llm.calls == 2
+
+
+# ---- Historial recortado y resultados de herramientas antiguos podados ----
+
+
+def test_solo_se_mandan_los_ultimos_6_mensajes_del_historial():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient([text("ok")])
+    _override(llm=llm, gymflow=gymflow)
+
+    history = [{"role": "user", "content": f"mensaje {i}"} for i in range(10)]
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": history, "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    sent_messages = llm.received_calls[0]["messages"]
+    assert len(sent_messages) == 1 + 6  # sistema + últimos 6
+    assert sent_messages[1]["content"] == "mensaje 4"
+    assert sent_messages[-1]["content"] == "mensaje 9"
+
+
+def test_solo_queda_el_ultimo_resultado_de_cada_herramienta_en_la_conversacion():
+    gymflow = FakeGymflowClient(sessions=[SESSION])
+    llm = ScriptedToolCallingClient(
+        [
+            tool_call("listar_clases"),
+            tool_call("listar_clases", discipline="Yoga"),
+            text("Aquí tienes."),
+        ]
+    )
+    _override(llm=llm, gymflow=gymflow)
+
+    r = client.post(
+        "/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "clases"}], "member_token": MEMBER_TOKEN},
+    )
+    assert r.status_code == 200
+    last_messages = llm.received_calls[-1]["messages"]
+    tool_messages = [m for m in last_messages if m["role"] == "tool"]
+    assert len(tool_messages) == 2
+    assert "resultado antiguo" in tool_messages[0]["content"]
+    assert "resultado antiguo" not in tool_messages[1]["content"]
+
+
 def test_no_reintenta_ante_400():
     gymflow = FakeGymflowClient(sessions=[SESSION])
     llm = ScriptedToolCallingClient([fail(make_status_error(400)), text("no debería llegar aquí")])

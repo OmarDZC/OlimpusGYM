@@ -323,6 +323,19 @@ export function AssistantChatPanel({
             </div>
           )}
 
+          {/* Sin pendingAction pero con opciones reales: pasa cuando el asistente lista varias
+           * candidatas sin llegar a proponer ninguna (o cuando, tras el reintento, el modelo
+           * sigue sin llamar a la herramienta y el servidor ofrece elegir en vez de dejar una
+           * pregunta sin botón). Elegir una monta la propuesta en el cliente, sin volver a
+           * hablar con el modelo. */}
+          {!pendingAction && options && options.length > 0 && (
+            <div className="flex w-full flex-col gap-2" role="group" aria-label="Clases disponibles">
+              {options.map((option) => (
+                <ScheduleOptionCard key={option.id} option={option} onSelect={() => handleSelectAlternative(option)} />
+              ))}
+            </div>
+          )}
+
           {sending && (
             <div className="flex items-center gap-2 self-start text-xs text-text-muted">
               <span className="flex gap-1" aria-hidden="true">

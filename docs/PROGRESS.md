@@ -13,6 +13,99 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 9c (commit 3) - El asistente ya no "confirma" sin proponer de verdad (2026-10-11)
+- Hecho:
+  - Mensaje de sistema: ahora deja claro que para proponer reservar o cancelar hay que llamar
+    SIEMPRE a `reservar_clase`/`cancelar_reserva`, que el modelo nunca debe preguntar
+    "¿confirmas?" (eso lo hace el botón de la interfaz, no el texto) y que tras llamar a la
+    herramienta la respuesta debe ser una frase breve sin preguntar nada.
+  - Red de seguridad en el servidor (`app/assistant.py`): si la respuesta del modelo no llama a
+    ninguna herramienta pero "suena" a que propone o da por hecha una reserva/cancelación
+    (`_looks_like_unconfirmed_claim`, con una lista de frases: "confirmas", "voy a reservar",
+    "ya está reservada"...) y no hay `pending_action`, se hace **un** reintento automático
+    añadiendo un recordatorio al modelo. Si en ese momento hay una única clase candidata de
+    `listar_clases` y la frase no suena a cancelación, se fuerza la herramienta con
+    `tool_choice` (no se fuerza si podría ser una cancelación, para no forzar la herramienta
+    equivocada). Si tras el reintento el modelo sigue sin llamar a la herramienta: se elimina
+    la pregunta muerta y, si hay candidatas reales de por medio, se devuelven como `options`
+    con el texto "Elige la clase que quieres reservar."; si no hay ninguna, se pide aclarar en
+    vez de repetir la pregunta.
+  - Frontend (`AssistantChatPanel.tsx`): nuevo bloque que pinta `options` como tarjetas
+    pulsables también cuando **no** hay `pending_action` (antes solo se veían dentro de
+    "Cambiar horario", que exige una propuesta activa) — así el "Elige la clase que quieres
+    reservar" del punto anterior tiene de verdad algo que pulsar, y de paso también sirve para
+    reservar directamente desde una lista de varias clases sin pedirlo dos veces.
+  - Historial recortado a los últimos 6 mensajes del socio (antes se mandaban todos, hasta 20)
+    y, dentro del mismo turno, solo se manda el resultado más reciente de cada herramienta: los
+    resultados antiguos de `listar_clases`/`mis_reservas` repetidos se sustituyen por un aviso
+    corto en vez de mandarlos enteros otra vez (sin borrar el mensaje, para no romper el
+    emparejamiento `tool_call_id` que exige la API).
+  - Tests nuevos en `ai-service` (modelo simulado): el reintento se dispara con "¿confirmas?"
+    sin herramienta y también con la frase nueva sugerida ("Esta es la clase que he
+    encontrado") si tampoco llamó a la herramienta; con una sola candidata se fuerza
+    `tool_choice`, pero no si la frase suena a cancelación; si el reintento también falla, se
+    devuelven opciones reales sin pregunta (o se pide aclarar si no hay candidatas); el
+    historial se recorta a 6 mensajes; dentro de un turno solo queda el resultado más reciente
+    de cada herramienta en la conversación que se le manda al modelo; los intentos de inyección
+    siguen sin ejecutar nada (tests ya existentes, repetidos para confirmar que no cambiaron).
+    41/41 en verde. No hizo falta tocar `e2e/fake-llm`: su guion siempre llama a la herramienta
+    antes del texto final, así que `pending_action` nunca está vacío cuando aparece su
+    "¿confirmas?" y el reintento nunca se dispara ahí.
+  - De paso, arreglados dos tests end-to-end que resultaron ser frágiles por una ambigüedad de
+    selector (el nombre de la clase de prueba aparece tanto en el eco del mensaje del socio
+    como en la tarjeta de la propuesta, y Playwright en modo estricto a veces lo detectaba y a
+    veces no, según el momento exacto en que se hacía la comprobación): ahora se localiza por el
+    botón "Confirmar" y por un dato que solo existe en la tarjeta (la sala), no por el nombre.
+- Decisiones / simplificaciones:
+  - La lista de frases que detectan una "propuesta sin herramienta" es una lista de palabras
+    clave, no un análisis real del lenguaje: puede dejar pasar variantes que no se hayan visto
+    todavía (ver "Pendiente"). Se amplió una vez en esta misma ronda al encontrar un caso real
+    que no cubría (ver "Hecho con el modelo real").
+  - Solo se fuerza `reservar_clase` por `tool_choice`, nunca `cancelar_reserva`: el encargo solo
+    hablaba de "los resultados de listar_clases", y forzar la herramienta equivocada en un
+    contexto de cancelación sería peor que no forzar ninguna.
+  - El límite de 6 mensajes es sobre el historial del socio (`request.messages`, ya limitado a
+    20 por el backend); no afecta a los pasos de herramientas del turno en curso, que son aparte.
+- Hecho con el modelo real (Groq, `qwen/qwen3.8-27b`, socia Laura, Completa, con pausas de ~22s
+  entre llamadas para no chocar con el límite de tokens/min):
+  - Conversación larga de 7 turnos (preguntar y pedir reservar boxeo, yoga y spinning,
+    alternando): el reintento automático se disparó varias veces y en todas salvo una consiguió
+    una `pending_action` real en el mismo turno (una llamada extra al modelo, ~9-10s en vez de
+    &lt;2s). Un intento ("resérvame una cualquiera" de yoga) falló la primera vez que se probó,
+    con la frase nueva sugerida por el propio mensaje de sistema ("Esta es la clase que he
+    encontrado") y sin llamar a la herramienta — un hueco real en la lista de frases detectadas,
+    que no incluía esa variante. Se añadió esa frase a la lista y, repetido el mismo caso,
+    funcionó: el reintento automático llamó a la herramienta y devolvió una `pending_action`
+    real.
+  - Medido de forma aproximada (no es un experimento controlado, son pocas muestras con un
+    modelo no determinista): antes del arreglo, en las pruebas de la ronda anterior (commit 1),
+    3 de 3 intentos de reservar en una conversación larga se quedaban sin `pending_action`.
+    Después del arreglo (con la lista de frases ya ampliada), de los intentos de reserva
+    repetidos en esta ronda, todos acabaron con una `pending_action` real, bien a la primera o
+    bien tras el reintento automático — aunque sigue sin ser infalible: la propia necesidad de
+    ampliar la lista de frases a mitad de esta prueba es la prueba de que un modelo lo bastante
+    creativo puede encontrar una forma de "proponer" en texto que la lista todavía no reconozca.
+- Pendiente:
+  - La detección de "suena a que propone sin haber llamado a la herramienta" es una lista de
+    frases fija, no infalible: un modelo que redactara su confirmación de otra forma distinta
+    a las que hay en la lista se seguiría colando. Si se repite, lo más robusto sería no
+    depender del texto en absoluto (reforzar aún más el mensaje de sistema, o cambiar a un
+    proveedor/modelo con tool calling más fiable), no seguir ampliando la lista de frases caso
+    a caso.
+  - No se ha medido con un experimento controlado (mismas preguntas, muchas repeticiones) si el
+    recorte del historial a 6 mensajes por sí solo reduce el fallo: con un modelo real de pago
+    por token y límite de peticiones por minuto, no había presupuesto en esta sesión para ese
+    tipo de medición. Lo que sí está probado es que, con el recorte ya puesto, el reintento
+    automático consigue recuperar los casos que se probaron.
+- Cómo probarlo: `docker compose up -d --build ai-service`, hablar con el asistente desde
+  `/horario` → "Reservar con IA" pidiendo reservar varias clases seguidas en la misma
+  conversación.
+- Tests: `ai-service`: `pytest -q` → 41/41 en verde. Frontend: `npm run typecheck` y
+  `npm run build` en verde. `npx playwright test` (con `docker-compose.e2e.yml`, base de datos
+  y backend recién creados, como en CI): 31/31 en verde.
+
+---
+
 ### Trozo 9c (commit 2) - Tarjetas reales en el chat y panel de gestión en móvil (2026-10-11)
 - Hecho:
   - Chat del asistente (`/horario` → "Reservar con IA"): la propuesta de reservar ya no es
