@@ -6,5 +6,6 @@ import java.util.List;
 public record AiAssistantChatResponse(
     String reply,
     @JsonProperty("pending_action") AiPendingAction pendingAction,
-    List<AiScheduleOption> options) {
+    List<AiScheduleOption> options,
+    @JsonProperty("context_option_ids") List<String> contextOptionIds) {
 }

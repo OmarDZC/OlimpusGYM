@@ -196,6 +196,91 @@ class WorkoutAndMembershipHttpTest {
             .andExpect(jsonPath("$.hasPlan").value(false));
     }
 
+    // ---- Rutina semanal completa, "Mi entrenamiento" (Trozo 9d) ----
+
+    private WorkoutPlan createTwoDayPlanForUser(User user) {
+        int otherDayIndex = (todayIndex + 2) % 7; // un día de entrenamiento que no es hoy
+        WeeklyPlan weeklyPlan = new WeeklyPlan(List.of(
+            new PlanDay(todayIndex, "Hoy", "Fuerza", false, List.of(
+                new PlanExercise(0, "Sentadilla", 3, "10", 60.0, 90, null))),
+            new PlanDay(otherDayIndex, "Otro día", "Cardio", false, List.of(
+                new PlanExercise(0, "Burpees", 4, "12", null, 45, null)))));
+        LocalDate weekStart = LocalDate.now(ZoneId.of("Europe/Madrid")).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        WorkoutPlan workoutPlan = new WorkoutPlan(
+            tenant.getId(), user.getId(), weekStart, "Fuerza", "Intermedio", 2,
+            workoutService.serialize(weeklyPlan), PlanSource.MANUAL);
+        return workoutPlans.save(workoutPlan);
+    }
+
+    @Test
+    void memberSeesTheFullWeekWithTodayHighlightedAndRestDaysForTheRest() throws Exception {
+        User user = createMemberWithMembership("semana.completa@test.local");
+        createTwoDayPlanForUser(user);
+        String token = loginAndGetToken("semana.completa@test.local");
+        int otherDayIndex = (todayIndex + 2) % 7;
+
+        mvc.perform(get("/api/v1/me/workout/week").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.hasPlan").value(true))
+            .andExpect(jsonPath("$.todayIndex").value(todayIndex))
+            .andExpect(jsonPath("$.days", org.hamcrest.Matchers.hasSize(7)))
+            .andExpect(jsonPath("$.days[" + todayIndex + "].restDay").value(false))
+            .andExpect(jsonPath("$.days[" + todayIndex + "].exercises[0].name").value("Sentadilla"))
+            .andExpect(jsonPath("$.days[" + otherDayIndex + "].exercises[0].name").value("Burpees"))
+            .andExpect(jsonPath("$.days[" + ((todayIndex + 1) % 7) + "].restDay").value(true));
+    }
+
+    @Test
+    void weekTracksLoggedSetsSeparatelyPerDayEvenWithTheSameExerciseIndex() throws Exception {
+        User user = createMemberWithMembership("series.por.dia@test.local");
+        createTwoDayPlanForUser(user);
+        String token = loginAndGetToken("series.por.dia@test.local");
+        int otherDayIndex = (todayIndex + 2) % 7;
+
+        // Marca la serie de HOY (exerciseIndex 0) hecha: el otro día usa el mismo índice 0
+        // para un ejercicio distinto y no debería contaminarse.
+        String body = objectMapper.writeValueAsString(new LogSetRequest(todayIndex, 0, 0, true, null, null));
+        mvc.perform(post("/api/v1/me/workout/logs").header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/v1/me/workout/week").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.days[" + todayIndex + "].exercises[0].sets[0].done").value(true))
+            .andExpect(jsonPath("$.days[" + otherDayIndex + "].exercises[0].sets[0].done").value(false));
+    }
+
+    @Test
+    void restDayPointsToTheNextTrainingDayInsteadOfSayingNothing() throws Exception {
+        User user = createMemberWithMembership("descanso.con.proximo@test.local");
+        int trainingDayIndex = (todayIndex + 1) % 7; // el único día de entrenamiento: mañana
+        WeeklyPlan weeklyPlan = new WeeklyPlan(List.of(
+            new PlanDay(trainingDayIndex, "Día de entreno", "Pierna", false, List.of(
+                new PlanExercise(0, "Sentadilla", 3, "10", 60.0, 90, null)))));
+        LocalDate weekStart = LocalDate.now(ZoneId.of("Europe/Madrid")).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        workoutPlans.save(new WorkoutPlan(
+            tenant.getId(), user.getId(), weekStart, "Fuerza", "Intermedio", 1,
+            workoutService.serialize(weeklyPlan), PlanSource.MANUAL));
+        String token = loginAndGetToken("descanso.con.proximo@test.local");
+
+        mvc.perform(get("/api/v1/me/workout/today").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.restDay").value(true))
+            .andExpect(jsonPath("$.nextLabel").value("Día de entreno"))
+            .andExpect(jsonPath("$.nextFocus").value("Pierna"));
+    }
+
+    @Test
+    void memberWithoutPlanGetsHasPlanFalseForTheWeekToo() throws Exception {
+        createMemberWithMembership("sin.rutina.semana@test.local");
+        String token = loginAndGetToken("sin.rutina.semana@test.local");
+
+        mvc.perform(get("/api/v1/me/workout/week").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.hasPlan").value(false))
+            .andExpect(jsonPath("$.days", org.hamcrest.Matchers.hasSize(0)));
+    }
+
     @Test
     void loggingASetPersistsAndShowsAsDoneAfterward() throws Exception {
         User user = createMemberWithMembership("marca.serie@test.local");

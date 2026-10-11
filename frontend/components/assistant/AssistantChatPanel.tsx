@@ -129,6 +129,7 @@ export function AssistantChatPanel({
   const [pendingAction, setPendingAction] = useState<AssistantPendingAction | null>(null);
   const [options, setOptions] = useState<AssistantScheduleOption[] | null>(null);
   const [showAlternatives, setShowAlternatives] = useState(false);
+  const [contextOptionIds, setContextOptionIds] = useState<string[]>([]);
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -182,11 +183,12 @@ export function AssistantChatPanel({
     setSending(true);
     setError(null);
     try {
-      const result = await api.assistantChat(token, { messages: nextHistory });
+      const result = await api.assistantChat(token, { messages: nextHistory, contextOptionIds });
       setHistory((prev) => trimHistory([...prev, { role: "assistant", content: result.reply }]));
       addMessage("assistant", result.reply);
       setPendingAction(result.pendingAction);
       setOptions(result.options);
+      setContextOptionIds(result.contextOptionIds ?? []);
       setShowAlternatives(false);
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
@@ -209,6 +211,7 @@ export function AssistantChatPanel({
       addMessage("assistant", result.reply);
       setPendingAction(null);
       setOptions(null);
+      setContextOptionIds([]);
       setShowAlternatives(false);
       onActionConfirmed();
     } catch (e) {
@@ -225,6 +228,7 @@ export function AssistantChatPanel({
     addMessage("assistant", "De acuerdo, no he hecho nada.");
     setPendingAction(null);
     setOptions(null);
+    setContextOptionIds([]);
     setShowAlternatives(false);
     inputRef.current?.focus();
   }

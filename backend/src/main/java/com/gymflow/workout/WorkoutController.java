@@ -5,6 +5,7 @@ import com.gymflow.workout.dto.GenerateWorkoutRequest;
 import com.gymflow.workout.dto.LogSetRequest;
 import com.gymflow.workout.dto.StreakResponse;
 import com.gymflow.workout.dto.TodayWorkoutResponse;
+import com.gymflow.workout.dto.WeekWorkoutResponse;
 import com.gymflow.workout.dto.WeeklyPlan;
 import jakarta.validation.Valid;
 import java.util.UUID;
@@ -29,6 +30,11 @@ public class WorkoutController {
     @GetMapping("/workout/today")
     public TodayWorkoutResponse today(Authentication authentication) {
         return workoutService.getToday(TenantContext.require(), userId(authentication));
+    }
+
+    @GetMapping("/workout/week")
+    public WeekWorkoutResponse week(Authentication authentication) {
+        return workoutService.getWeek(TenantContext.require(), userId(authentication));
     }
 
     @GetMapping("/streak")

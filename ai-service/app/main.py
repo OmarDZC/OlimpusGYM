@@ -3,7 +3,7 @@ import logging
 from fastapi import Depends, FastAPI, HTTPException
 from openai import OpenAI
 
-from app.assistant import AssistantFailedError, AssistantUnavailableError
+from app.assistant import AssistantFailedError, AssistantRateLimitedError, AssistantUnavailableError
 from app.assistant import chat as run_assistant_chat
 from app.config import settings
 from app.gymflow_client import GymflowClient, get_gymflow_client
@@ -69,6 +69,14 @@ def assistant_chat(
 ) -> AssistantChatResponse:
     try:
         return run_assistant_chat(client, gymflow, request)
+    except AssistantRateLimitedError as exc:
+        # Subclase de AssistantUnavailableError: tiene que comprobarse antes. No es que el
+        # asistente esté caído, es que se agotó el cupo de peticiones del proveedor por ahora.
+        _log_provider_failure("el asistente", exc)
+        raise HTTPException(
+            status_code=429,
+            detail="El asistente ha alcanzado su límite de peticiones por ahora. Espera un momento y vuelve a intentarlo.",
+        )
     except AssistantUnavailableError as exc:
         _log_provider_failure("el asistente", exc)
         raise HTTPException(

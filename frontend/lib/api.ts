@@ -284,10 +284,35 @@ export type TodayWorkout = {
   dayLabel: string | null;
   focus: string | null;
   exercises: ExerciseProgress[];
+  /** Solo con restDay=true: qué toca el próximo día de entrenamiento. */
+  nextLabel: string | null;
+  nextFocus: string | null;
 };
 
 export async function fetchTodayWorkout(token: string): Promise<TodayWorkout> {
   const response = await fetch(`${API_URL}/api/v1/me/workout/today`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) await throwProblem(response);
+  return response.json();
+}
+
+export type DayProgress = {
+  dayIndex: number;
+  label: string;
+  focus: string | null;
+  restDay: boolean;
+  exercises: ExerciseProgress[];
+};
+
+export type WeekWorkout = {
+  hasPlan: boolean;
+  todayIndex: number;
+  days: DayProgress[];
+};
+
+export async function fetchWeekWorkout(token: string): Promise<WeekWorkout> {
+  const response = await fetch(`${API_URL}/api/v1/me/workout/week`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) await throwProblem(response);
@@ -548,16 +573,28 @@ export type AssistantChatResult = {
   reply: string;
   pendingAction: AssistantPendingAction | null;
   options: AssistantScheduleOption[] | null;
+  /** Ids de las tarjetas que acaba de mostrar: se reenvían tal cual en el siguiente mensaje
+   * (contextOptionIds) para que "sí"/"vale"/"ok" con una sola pueda elegirla sin volver a
+   * hablar con el modelo. */
+  contextOptionIds: string[];
 };
 
 export async function assistantChat(
   token: string,
-  input: { messages: AssistantChatMessage[]; confirmAction?: AssistantPendingAction | null },
+  input: {
+    messages: AssistantChatMessage[];
+    confirmAction?: AssistantPendingAction | null;
+    contextOptionIds?: string[];
+  },
 ): Promise<AssistantChatResult> {
   const response = await fetch(`${API_URL}/api/v1/me/assistant/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ messages: input.messages, confirmAction: input.confirmAction ?? null }),
+    body: JSON.stringify({
+      messages: input.messages,
+      confirmAction: input.confirmAction ?? null,
+      contextOptionIds: input.contextOptionIds ?? [],
+    }),
   });
   if (!response.ok) await throwProblem(response);
   return response.json();

@@ -7,5 +7,6 @@ import java.util.List;
 public record AiAssistantChatRequest(
     List<AiChatMessage> messages,
     @JsonProperty("member_token") String memberToken,
-    @JsonProperty("confirm_action") AiPendingAction confirmAction) {
+    @JsonProperty("confirm_action") AiPendingAction confirmAction,
+    @JsonProperty("context_option_ids") List<String> contextOptionIds) {
 }

@@ -11,5 +11,6 @@ import java.util.List;
  */
 public record AssistantChatRequest(
     @NotNull @Size(max = 20, message = "Demasiados mensajes en la conversación") List<@Valid ChatMessageDto> messages,
-    @Valid PendingActionDto confirmAction) {
+    @Valid PendingActionDto confirmAction,
+    List<String> contextOptionIds) {
 }
