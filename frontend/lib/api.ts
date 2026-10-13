@@ -121,7 +121,7 @@ export async function fetchPublicConfig(): Promise<PublicConfig> {
   return response.json();
 }
 
-export async function demoLogin(role: "MEMBER" | "OWNER"): Promise<AuthResponse> {
+export async function demoLogin(role: "MEMBER" | "STAFF"): Promise<AuthResponse> {
   const response = await fetch(`${API_URL}/api/v1/auth/demo-login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

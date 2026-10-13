@@ -76,6 +76,9 @@ public class DevDataSeeder implements CommandLineRunner {
     private static final String DEV_ADMIN_EMAIL = "omaradmin@gmail.com";
     private static final String DEV_ADMIN_PASSWORD = "omaradmin";
 
+    /** Mínimo exigido a DEMO_OWNER_PASSWORD, igual que al admin real de producción. */
+    private static final int MIN_DEMO_OWNER_PASSWORD_LENGTH = 12;
+
     private record MemberSeed(String email, String fullName, PlanCode plan) {
     }
 
@@ -92,6 +95,13 @@ public class DevDataSeeder implements CommandLineRunner {
         new MemberSeed("nerea@olympusgym.test", "Nerea Vidal", PlanCode.BASICA),
         new MemberSeed("hugo@olympusgym.test", "Hugo Santos", PlanCode.ATLETA_PRO),
         new MemberSeed("claudia@olympusgym.test", "Claudia Reyes", PlanCode.COMPLETA));
+
+    /** Trozo 9f: en modo demo solo existen estos 3 socios (uno por tarifa), para que
+     * scripts/reset-demo.sh pueda dejar un conjunto exacto y conocido de cuentas. */
+    private static final List<MemberSeed> DEMO_MEMBERS = List.of(
+        new MemberSeed("carlos@olympusgym.test", "Carlos M.", PlanCode.ATLETA_PRO),
+        new MemberSeed("laura@olympusgym.test", "Laura Pérez", PlanCode.COMPLETA),
+        new MemberSeed("marcos@olympusgym.test", "Marcos Iglesias", PlanCode.BASICA));
 
     /** discipline, nombre, hora, duracion en minutos, sala, aforo habitual. */
     private record SessionTemplate(
@@ -120,8 +130,8 @@ public class DevDataSeeder implements CommandLineRunner {
     private final WorkoutService workoutService;
     private final PasswordEncoder passwordEncoder;
     private final Environment environment;
+    private final String demoOwnerEmail;
     private final String demoOwnerPassword;
-    private final String demoMemberPassword;
 
     public DevDataSeeder(
             TenantRepository tenants,
@@ -135,8 +145,8 @@ public class DevDataSeeder implements CommandLineRunner {
             WorkoutService workoutService,
             PasswordEncoder passwordEncoder,
             Environment environment,
-            @Value("${gymflow.demo.owner-password:}") String demoOwnerPassword,
-            @Value("${gymflow.demo.member-password:}") String demoMemberPassword) {
+            @Value("${gymflow.demo.owner-email:}") String demoOwnerEmail,
+            @Value("${gymflow.demo.owner-password:}") String demoOwnerPassword) {
         this.tenants = tenants;
         this.users = users;
         this.plans = plans;
@@ -148,14 +158,15 @@ public class DevDataSeeder implements CommandLineRunner {
         this.workoutService = workoutService;
         this.passwordEncoder = passwordEncoder;
         this.environment = environment;
+        this.demoOwnerEmail = demoOwnerEmail;
         this.demoOwnerPassword = demoOwnerPassword;
-        this.demoMemberPassword = demoMemberPassword;
     }
 
     /** {@code true} con el perfil "demo" activo (despliegue público de ejemplo): mismos datos
-     * que "dev", pero sin la cuenta de admin de desarrollo y con las contraseñas fuertes de
-     * {@code DEMO_OWNER_PASSWORD}/{@code DEMO_MEMBER_PASSWORD} en vez de las de desarrollo,
-     * conocidas y publicadas en el README. */
+     * que "dev" (horario, reservas), pero sin la cuenta de admin de desarrollo, con solo 3
+     * socios (no 12) y con un único OWNER real que sale de
+     * {@code DEMO_OWNER_EMAIL}/{@code DEMO_OWNER_PASSWORD} (nunca en los botones de acceso ni
+     * en el README) en vez del "javier@olympusgym.test" fijo de dev. */
     private boolean isDemoMode() {
         return environment.matchesProfiles("demo");
     }
@@ -173,21 +184,31 @@ public class DevDataSeeder implements CommandLineRunner {
         Plan pro = findPlan(tenant, PlanCode.ATLETA_PRO);
 
         boolean demoMode = isDemoMode();
-        if (demoMode && (demoOwnerPassword.isBlank() || demoMemberPassword.isBlank())) {
-            throw new IllegalStateException(
-                "DEMO_OWNER_PASSWORD y DEMO_MEMBER_PASSWORD son obligatorios en modo demo.");
-        }
-
-        ensureUser(tenant, "javier@olympusgym.test", "Javier M.", Role.OWNER);
-        if (!demoMode) {
+        if (demoMode) {
+            if (demoOwnerEmail.isBlank() || demoOwnerPassword.isBlank()) {
+                throw new IllegalStateException("DEMO_OWNER_EMAIL y DEMO_OWNER_PASSWORD son obligatorios en modo demo.");
+            }
+            if (demoOwnerPassword.length() < MIN_DEMO_OWNER_PASSWORD_LENGTH) {
+                throw new IllegalStateException(
+                    "DEMO_OWNER_PASSWORD es demasiado corta (mínimo " + MIN_DEMO_OWNER_PASSWORD_LENGTH + " caracteres).");
+            }
+            // El único OWNER real de la demo: no sale en los botones de /acceso ni en el
+            // README, a diferencia de las cuentas públicas de abajo.
+            ensureUser(tenant, demoOwnerEmail, "Propietario", Role.OWNER, demoOwnerPassword);
+        } else {
+            ensureUser(tenant, "javier@olympusgym.test", "Javier M.", Role.OWNER);
             // El admin de desarrollo (contraseña corta, conocida y publicada en el README) no
-            // tiene sitio en un despliegue público, aunque sea "solo" de demostración.
+            // tiene sitio en un despliegue público, ni siquiera en la demo.
             ensureUser(tenant, DEV_ADMIN_EMAIL, "Omar (admin de desarrollo)", Role.OWNER, DEV_ADMIN_PASSWORD);
         }
         User marta = ensureUser(tenant, "marta@olympusgym.test", "Marta Gómez", Role.STAFF);
         User dani = ensureUser(tenant, "dani@olympusgym.test", "Dani Rodríguez", Role.STAFF);
 
-        List<User> members = MEMBERS.stream()
+        // En demo, solo 3 socios (uno por tarifa) con la misma contraseña simple que el resto
+        // de cuentas públicas: scripts/reset-demo.sh puede entonces dejar un conjunto exacto y
+        // conocido. En dev, los 12 de siempre, para una demo local más rica.
+        List<MemberSeed> membersToSeed = demoMode ? DEMO_MEMBERS : MEMBERS;
+        List<User> members = membersToSeed.stream()
             .map(seed -> {
                 User member = ensureUser(tenant, seed.email(), seed.fullName(), Role.MEMBER);
                 Plan plan = switch (seed.plan()) {
@@ -230,9 +251,10 @@ public class DevDataSeeder implements CommandLineRunner {
                 Instant endsAt = startsAt.plusSeconds(template.durationMinutes() * 60L);
 
                 // La segunda sesión de Spinning de la quincena se deja a propósito con poco
-                // aforo para poder enseñar una clase completa con lista de espera.
+                // aforo para poder enseñar una clase completa con lista de espera. En demo
+                // solo hay 3 socios (no 12): con aforo 7 nadie llegaría a la lista de espera.
                 boolean isShowcaseWaitlistSession = dayOffset == 1 && template.discipline().equals("Spinning");
-                int capacity = isShowcaseWaitlistSession ? 7 : template.capacity();
+                int capacity = isShowcaseWaitlistSession ? (isDemoMode() ? 2 : 7) : template.capacity();
 
                 ClassSession session = new ClassSession(
                     tenant.getId(),
@@ -273,10 +295,15 @@ public class DevDataSeeder implements CommandLineRunner {
 
         record ExtraBooking(String memberEmail, String discipline, int dayOffsetAtLeast) {
         }
-        List<ExtraBooking> extras = List.of(
-            new ExtraBooking("carlos@olympusgym.test", "CrossFit", 2),
-            new ExtraBooking("laura@olympusgym.test", "Yoga", 1),
-            new ExtraBooking("sofia@olympusgym.test", "Boxeo", 3));
+        List<ExtraBooking> extras = isDemoMode()
+            ? List.of(
+                new ExtraBooking("carlos@olympusgym.test", "CrossFit", 2),
+                new ExtraBooking("laura@olympusgym.test", "Yoga", 1),
+                new ExtraBooking("marcos@olympusgym.test", "Boxeo", 3))
+            : List.of(
+                new ExtraBooking("carlos@olympusgym.test", "CrossFit", 2),
+                new ExtraBooking("laura@olympusgym.test", "Yoga", 1),
+                new ExtraBooking("sofia@olympusgym.test", "Boxeo", 3));
 
         for (ExtraBooking extra : extras) {
             members.stream()
@@ -372,15 +399,10 @@ public class DevDataSeeder implements CommandLineRunner {
                 "No existe la tarifa " + code + ": BusinessDataSeeder debería haberla creado antes."));
     }
 
+    /** Staff y socios, en dev y en demo por igual, usan la misma contraseña simple y
+     * pública: el único secreto real de la demo es el OWNER (ver más arriba). */
     private User ensureUser(Tenant tenant, String email, String fullName, Role role) {
-        String password = DEMO_PASSWORD;
-        if (isDemoMode()) {
-            // El dueño y el staff comparten la contraseña "de owner" (ninguna de las dos se
-            // anuncia salvo la que de verdad usan los botones de demo, ver DEMO_OWNER_EMAIL);
-            // los socios, la de "member".
-            password = role == Role.MEMBER ? demoMemberPassword : demoOwnerPassword;
-        }
-        return ensureUser(tenant, email, fullName, role, password);
+        return ensureUser(tenant, email, fullName, role, DEMO_PASSWORD);
     }
 
     /** Igual que {@link #ensureUser(Tenant, String, String, Role)}, pero con una contraseña propia

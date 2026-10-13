@@ -34,7 +34,7 @@ function AccesoContent() {
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [demoMode, setDemoMode] = useState(false);
-  const [demoSubmitting, setDemoSubmitting] = useState<"MEMBER" | "OWNER" | null>(null);
+  const [demoSubmitting, setDemoSubmitting] = useState<"MEMBER" | "STAFF" | null>(null);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -58,7 +58,7 @@ function AccesoContent() {
       .catch(() => setDemoMode(false));
   }, []);
 
-  async function handleDemoLogin(role: "MEMBER" | "OWNER") {
+  async function handleDemoLogin(role: "MEMBER" | "STAFF") {
     setFormError(null);
     setDemoSubmitting(role);
     try {
@@ -202,6 +202,12 @@ function AccesoContent() {
               </Field>
             )}
 
+            {mode === "registro" && demoMode && (
+              <p className="rounded-control border border-accent/40 bg-accent/10 px-3.5 py-2.5 text-sm text-text">
+                Es una demostración: no escribas datos personales reales.
+              </p>
+            )}
+
             {formError && (
               <p role="alert" className="rounded-control border border-danger/40 bg-danger/10 px-3.5 py-2.5 text-sm text-danger">
                 {formError}
@@ -228,10 +234,10 @@ function AccesoContent() {
                 type="button"
                 variant="secondary"
                 disabled={demoSubmitting !== null}
-                onClick={() => handleDemoLogin("OWNER")}
+                onClick={() => handleDemoLogin("STAFF")}
                 className="w-full"
               >
-                {demoSubmitting === "OWNER" ? "Un momento..." : "Entrar como dueño de demostración"}
+                {demoSubmitting === "STAFF" ? "Un momento..." : "Entrar como staff de demostración"}
               </Button>
             </div>
           )}

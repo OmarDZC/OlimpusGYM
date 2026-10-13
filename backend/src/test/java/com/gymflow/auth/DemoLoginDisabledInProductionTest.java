@@ -61,7 +61,7 @@ class DemoLoginDisabledInProductionTest {
     void demoLoginDoesNotExistInProduction() throws Exception {
         mvc.perform(post("/api/v1/auth/demo-login")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(new DemoLoginRequestBody("OWNER"))))
+                .content(objectMapper.writeValueAsString(new DemoLoginRequestBody("MEMBER"))))
             .andExpect(status().isNotFound());
     }
 

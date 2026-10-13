@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/Card";
 import { Footer } from "@/components/layout/Footer";
 import { ContactForm } from "@/components/public/ContactForm";
 import { Reveal } from "@/components/motion/Reveal";
+import { fetchPublicConfigServer } from "@/lib/api-server";
 
 export const metadata: Metadata = {
   title: "Contacto | OlympusGYM",
@@ -14,7 +15,8 @@ export const metadata: Metadata = {
   },
 };
 
-export default function ContactoPage() {
+export default async function ContactoPage() {
+  const { demoMode } = await fetchPublicConfigServer();
   return (
     <main>
       <section className="mx-auto max-w-5xl px-4 py-16 sm:px-6">
@@ -29,6 +31,11 @@ export default function ContactoPage() {
         <Reveal className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-2">
           <Card>
             <h2 className="font-display text-xl font-bold uppercase tracking-tight">Envíanos un mensaje</h2>
+            {demoMode && (
+              <p className="mt-2 rounded-control border border-accent/40 bg-accent/10 px-3.5 py-2.5 text-sm text-text">
+                Es una demostración: no escribas datos personales reales.
+              </p>
+            )}
             <div className="mt-4">
               <ContactForm />
             </div>

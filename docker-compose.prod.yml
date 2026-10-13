@@ -41,9 +41,10 @@ services:
     environment:
       # "prod" (por defecto) para el despliegue real, o "demo" para la demo pública: mismo
       # stack, mismo docker-compose.prod.yml, mismo Caddyfile. En "demo", el backend crea un
-      # OWNER y un socio de ejemplo con DEMO_OWNER_PASSWORD/DEMO_MEMBER_PASSWORD (no las
-      # cuentas de desarrollo); ADMIN_EMAIL/ADMIN_PASSWORD no hacen falta ahí. En "prod", al
-      # revés: ADMIN_EMAIL/ADMIN_PASSWORD sí son obligatorios y no hay cuentas de ejemplo.
+      # único OWNER real con DEMO_OWNER_EMAIL/DEMO_OWNER_PASSWORD (nunca en los botones de
+      # acceso) más staff y 3 socios públicos con una contraseña simple y conocida (ver
+      # README); ADMIN_EMAIL/ADMIN_PASSWORD no hacen falta ahí. En "prod", al revés:
+      # ADMIN_EMAIL/ADMIN_PASSWORD sí son obligatorios y no hay cuentas de ejemplo.
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-gymflow}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-gymflow}
@@ -64,8 +65,8 @@ services:
       GYMFLOW_ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       GYMFLOW_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       # Obligatorios solo en modo "demo" (igual, el backend lo exige él mismo si faltan).
+      DEMO_OWNER_EMAIL: ${DEMO_OWNER_EMAIL:-}
       DEMO_OWNER_PASSWORD: ${DEMO_OWNER_PASSWORD:-}
-      DEMO_MEMBER_PASSWORD: ${DEMO_MEMBER_PASSWORD:-}
     expose:
       - "8080"
 
