@@ -227,39 +227,42 @@ reintenta solo, hay que corregir el problema y volver a `up -d --build`.
 ## Demo en vivo desde mi PC con Cloudflare Tunnel
 
 Para enseñar la demo sin un VPS: levanta el stack en tu propio PC (Windows) y abre un túnel
-gratuito de Cloudflare hacia Caddy. No necesita cuenta de Cloudflare ni dominio propio.
+gratuito de Cloudflare hacia Caddy. No necesita cuenta de Cloudflare ni dominio propio, y la
+URL que da el túnel (distinta cada vez) no hace falta conocerla de antemano: el frontend
+llama a la API con una ruta relativa (mismo origen que la página, Caddy ya enruta `/api/*`
+al backend), así que funciona igual desde tu PC o desde el móvil, con la URL que sea.
 
 1. Instala `cloudflared` (una sola vez):
    ```powershell
    winget install Cloudflare.cloudflared
    ```
-2. Crea `.env.prod` (como en el paso 7, pero en tu PC) con `DOMAIN=:80`, `PUBLIC_URL=http://localhost`
-   y `SPRING_PROFILES_ACTIVE=demo` (con `DEMO_OWNER_EMAIL`/`DEMO_OWNER_PASSWORD` propios).
-3. Arranca el stack:
-   ```powershell
-   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+2. En la raíz del proyecto, crea `.env.prod` con solo estas dos líneas (el resto las rellena
+   el script solo):
    ```
-4. Antes de enseñarla, déjala limpia:
-   ```powershell
-   ./scripts/reset-demo.sh .env.prod
+   DEMO_OWNER_EMAIL=tu-correo@ejemplo.com
+   DEMO_OWNER_PASSWORD=una-contraseña-de-12-caracteres-o-más
    ```
-5. Abre el túnel hacia el puerto de Caddy (80), en una ventana que dejes abierta:
-   ```powershell
-   cloudflared tunnel --url http://localhost:80
-   ```
-   `cloudflared` imprime una URL `https://algo-al-azar.trycloudflare.com`: esa es la que
+3. Ejecuta `./scripts/demo-tunnel.ps1` desde cualquier carpeta (resuelve la raíz del
+   proyecto solo, no depende de desde dónde lo lances). La primera vez:
+   - Genera `JWT_SECRET`, `POSTGRES_PASSWORD` y `REDIS_PASSWORD` al azar y los guarda en
+     `.env.prod` (no se muestran ni se vuelven a generar en la siguiente ejecución).
+   - Copia `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL` (y el respaldo, si lo tienes) desde tu
+     `.env` local — para a medias y te dice qué variable falta si no están.
+   - Arranca el stack, lo deja con los datos de ejemplo limpios (`reset-demo.sh`) y abre el
+     túnel, en una ventana que debes dejar abierta.
+4. `cloudflared` imprime una URL `https://algo-al-azar.trycloudflare.com`: esa es la que
    compartes. Solo expone el puerto de Caddy — Postgres, Redis y el servicio de IA nunca
    publican puerto al host en `docker-compose.prod.yml` (solo Caddy tiene `ports:`), así que
    el túnel no da acceso a nada más.
-6. Para pararlo: `Ctrl+C` en la ventana del túnel, y `docker compose -f docker-compose.prod.yml --env-file .env.prod down` para el stack.
-
-Un script listo con los pasos 3-5 en `scripts/demo-tunnel.ps1`.
+5. Para pararlo: `Ctrl+C` en la ventana del túnel, y
+   `docker compose -f docker-compose.prod.yml --env-file .env.prod down` para el stack.
 
 **Avisos importantes**:
 - La URL cambia cada vez que abres el túnel: no la guardes como permanente.
 - Solo funciona mientras tu PC esté encendido y conectado — no es un despliegue real.
-- Ejecuta `reset-demo.sh` antes de cada sesión en la que vayas a enseñarla, para que quien la
-  prueba vea siempre los datos de ejemplo limpios, no lo que dejó la última persona.
+- El script ya ejecuta `reset-demo.sh` cada vez que lo lanzas; si vas a enseñarla varias
+  veces seguidas sin reiniciar el stack, vuelve a correr `./scripts/reset-demo.sh .env.prod`
+  a mano entre una sesión y otra.
 
 ## Lista de comprobación final
 

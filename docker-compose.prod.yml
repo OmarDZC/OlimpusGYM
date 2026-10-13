@@ -51,7 +51,10 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env.prod}
       GYMFLOW_JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env.prod (openssl rand -base64 48)}
       GYMFLOW_AI_BASE_URL: http://ai-service:8000
-      GYMFLOW_CORS_ALLOWED_ORIGINS: ${PUBLIC_URL:?Define PUBLIC_URL en .env.prod}
+      # Opcional (ver el build del frontend más abajo): sin PUBLIC_URL, el navegador llama a
+      # la API en el mismo origen (ruta relativa), así que esta lista de orígenes para CORS
+      # ni se usa de verdad (el navegador no comprueba CORS en peticiones del mismo origen).
+      GYMFLOW_CORS_ALLOWED_ORIGINS: ${PUBLIC_URL:-http://localhost}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?Define REDIS_PASSWORD en .env.prod}
       # Límite de uso de la IA (Trozo 8a-2): valores por defecto razonables en application.yml
@@ -106,9 +109,12 @@ services:
     build:
       context: ./frontend
       args:
-        # Next.js hornea NEXT_PUBLIC_* en el bundle del navegador en tiempo de build: tiene que
-        # ser ya la URL pública final, no se puede cambiar luego solo con una variable de entorno.
-        NEXT_PUBLIC_API_URL: ${PUBLIC_URL:?Define PUBLIC_URL en .env.prod}
+        # PUBLIC_URL es opcional (Trozo 9g): en blanco, el navegador llama a la API con una
+        # ruta relativa ("/api/v1/...", mismo origen que la página — Caddy ya enruta /api/*
+        # al backend), así que funciona igual con un dominio real, con una IP o con una URL de
+        # túnel que no se conoce hasta que arranca (cloudflared). Solo hace falta PUBLIC_URL si
+        # alguna vez el frontend y el backend quedaran en dominios distintos.
+        NEXT_PUBLIC_API_URL: ${PUBLIC_URL:-}
     restart: unless-stopped
     depends_on:
       - backend
