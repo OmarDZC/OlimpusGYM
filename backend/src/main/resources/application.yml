@@ -83,8 +83,9 @@ gymflow:
     email: ${GYMFLOW_ADMIN_EMAIL:}
     password: ${GYMFLOW_ADMIN_PASSWORD:}
   demo:
-    # Despliegue público en modo demo (Trozo 8a-2): contraseñas fuertes de verdad, no las de
-    # desarrollo (conocidas, publicadas en el README). Sin prefijo GYMFLOW_ a propósito: así
-    # las pide el encargo (DEMO_OWNER_PASSWORD, DEMO_MEMBER_PASSWORD).
+    # Despliegue público en modo demo (Trozo 9f): el único OWNER real sale de estas dos
+    # variables (nunca aparece en los botones de acceso ni en el README); staff y los 3
+    # socios públicos de la demo usan la misma contraseña simple y conocida que en dev, sin
+    # nada que proteger. Sin prefijo GYMFLOW_ a propósito: así las pide el encargo.
+    owner-email: ${DEMO_OWNER_EMAIL:}
     owner-password: ${DEMO_OWNER_PASSWORD:}
-    member-password: ${DEMO_MEMBER_PASSWORD:}

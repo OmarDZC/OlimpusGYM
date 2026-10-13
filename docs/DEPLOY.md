@@ -224,6 +224,43 @@ siguen con sus datos (volúmenes con nombre). Si una migración de Flyway falla 
 backend, revisa los logs (`docker compose ... logs backend`) antes de nada: Flyway no
 reintenta solo, hay que corregir el problema y volver a `up -d --build`.
 
+## Demo en vivo desde mi PC con Cloudflare Tunnel
+
+Para enseñar la demo sin un VPS: levanta el stack en tu propio PC (Windows) y abre un túnel
+gratuito de Cloudflare hacia Caddy. No necesita cuenta de Cloudflare ni dominio propio.
+
+1. Instala `cloudflared` (una sola vez):
+   ```powershell
+   winget install Cloudflare.cloudflared
+   ```
+2. Crea `.env.prod` (como en el paso 7, pero en tu PC) con `DOMAIN=:80`, `PUBLIC_URL=http://localhost`
+   y `SPRING_PROFILES_ACTIVE=demo` (con `DEMO_OWNER_EMAIL`/`DEMO_OWNER_PASSWORD` propios).
+3. Arranca el stack:
+   ```powershell
+   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+   ```
+4. Antes de enseñarla, déjala limpia:
+   ```powershell
+   ./scripts/reset-demo.sh .env.prod
+   ```
+5. Abre el túnel hacia el puerto de Caddy (80), en una ventana que dejes abierta:
+   ```powershell
+   cloudflared tunnel --url http://localhost:80
+   ```
+   `cloudflared` imprime una URL `https://algo-al-azar.trycloudflare.com`: esa es la que
+   compartes. Solo expone el puerto de Caddy — Postgres, Redis y el servicio de IA nunca
+   publican puerto al host en `docker-compose.prod.yml` (solo Caddy tiene `ports:`), así que
+   el túnel no da acceso a nada más.
+6. Para pararlo: `Ctrl+C` en la ventana del túnel, y `docker compose -f docker-compose.prod.yml --env-file .env.prod down` para el stack.
+
+Un script listo con los pasos 3-5 en `scripts/demo-tunnel.ps1`.
+
+**Avisos importantes**:
+- La URL cambia cada vez que abres el túnel: no la guardes como permanente.
+- Solo funciona mientras tu PC esté encendido y conectado — no es un despliegue real.
+- Ejecuta `reset-demo.sh` antes de cada sesión en la que vayas a enseñarla, para que quien la
+  prueba vea siempre los datos de ejemplo limpios, no lo que dejó la última persona.
+
 ## Lista de comprobación final
 
 - [ ] `ufw status` muestra solo 22, 80 y 443 abiertos.

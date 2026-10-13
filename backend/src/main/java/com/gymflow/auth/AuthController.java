@@ -30,11 +30,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
-    /** Trozo 8a-2: las dos cuentas que usan los botones "entrar como demo" en /acceso, solo
-     * disponibles con el perfil "demo" activo. Son las mismas que crea DevDataSeeder en modo
-     * demo (owner y un socio con tarifa que incluye IA), con las contraseñas fuertes de
-     * DEMO_OWNER_PASSWORD/DEMO_MEMBER_PASSWORD, nunca las de desarrollo. */
-    private static final String DEMO_OWNER_EMAIL = "javier@olympusgym.test";
+    /** Trozo 9f: las dos cuentas públicas que usan los botones "entrar como demo" en
+     * /acceso, solo disponibles con el perfil "demo" activo. El OWNER real de la demo
+     * (DEMO_OWNER_EMAIL/DEMO_OWNER_PASSWORD) nunca aparece aquí ni en ningún botón. */
+    private static final String DEMO_STAFF_EMAIL = "marta@olympusgym.test";
     private static final String DEMO_MEMBER_EMAIL = "carlos@olympusgym.test";
 
     private final TenantRepository tenants;
@@ -108,7 +107,7 @@ public class AuthController {
             // dar ninguna pista de que existe.
             return ResponseEntity.notFound().build();
         }
-        String email = "OWNER".equals(request.role()) ? DEMO_OWNER_EMAIL : DEMO_MEMBER_EMAIL;
+        String email = "STAFF".equals(request.role()) ? DEMO_STAFF_EMAIL : DEMO_MEMBER_EMAIL;
         User user = users.findByEmailIgnoreCase(email)
             .orElseThrow(() -> new IllegalStateException("La cuenta de demo " + email + " no existe: revisa el seed"));
 

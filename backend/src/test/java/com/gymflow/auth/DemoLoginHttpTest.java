@@ -39,8 +39,8 @@ class DemoLoginHttpTest {
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("gymflow.jwt.secret", () -> "test-only-secret-not-for-real-use-1234567890");
+        registry.add("gymflow.demo.owner-email", () -> "propietario-de-prueba@olympusgym.test");
         registry.add("gymflow.demo.owner-password", () -> "demo-owner-password-de-prueba");
-        registry.add("gymflow.demo.member-password", () -> "demo-member-password-de-prueba");
     }
 
     @Autowired
@@ -57,13 +57,13 @@ class DemoLoginHttpTest {
     }
 
     @Test
-    void demoLoginAsOwnerReturnsTheOwnerDemoAccount() throws Exception {
+    void demoLoginAsStaffReturnsTheStaffDemoAccount() throws Exception {
         mvc.perform(post("/api/v1/auth/demo-login")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(new DemoLoginRequestBody("OWNER"))))
+                .content(objectMapper.writeValueAsString(new DemoLoginRequestBody("STAFF"))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.email").value("javier@olympusgym.test"))
-            .andExpect(jsonPath("$.role").value("OWNER"))
+            .andExpect(jsonPath("$.email").value("marta@olympusgym.test"))
+            .andExpect(jsonPath("$.role").value("STAFF"))
             .andExpect(jsonPath("$.token").isNotEmpty());
     }
 
@@ -83,6 +83,16 @@ class DemoLoginHttpTest {
         mvc.perform(post("/api/v1/auth/demo-login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(new DemoLoginRequestBody("ADMIN"))))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void demoLoginNoLongerAcceptsOwnerAsARole() throws Exception {
+        // El OWNER real de la demo (DEMO_OWNER_EMAIL/DEMO_OWNER_PASSWORD) nunca es una opción
+        // de demo-login: no aparece en los botones de acceso (Trozo 9f).
+        mvc.perform(post("/api/v1/auth/demo-login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new DemoLoginRequestBody("OWNER"))))
             .andExpect(status().isBadRequest());
     }
 

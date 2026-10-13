@@ -16,6 +16,16 @@ export type PublicPlan = {
   aiAssistant: boolean;
 };
 
+export async function fetchPublicConfigServer(): Promise<{ demoMode: boolean }> {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/public/config`, { cache: "no-store" });
+    if (!response.ok) return { demoMode: false };
+    return response.json();
+  } catch {
+    return { demoMode: false };
+  }
+}
+
 export async function fetchPublicPlans(): Promise<PublicPlan[]> {
   // Sin caché: en la imagen de Docker, "next build" no tiene red hacia el backend (son
   // contenedores aparte), así que cachear la respuesta del build dejaría esta página servida

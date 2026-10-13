@@ -122,22 +122,23 @@ propuesta: hasta entonces puedes pedirle lo que quieras sin miedo a que reserve 
 
 ## Credenciales de demo
 
-Solo existen con `SPRING_PROFILES_ACTIVE=dev` o `demo` (el valor por defecto de `make up`):
-el seed (`DevDataSeeder`) nunca se ejecuta en producción. La contraseña de todas las cuentas
-de ejemplo es `Demo1234!`, salvo la del administrador de desarrollo, pensada para entrar
-rápido sin memorizarla.
+Con `SPRING_PROFILES_ACTIVE=dev` (el valor por defecto de `make up`, desarrollo local): 12
+socios de ejemplo, un OWNER fijo y un admin de desarrollo, todos con la contraseña
+`Demo1234!` salvo este último. Solo existen en local, nunca se despliegan.
 
 | Rol | Correo | Contraseña | Notas |
 |---|---|---|---|
 | OWNER (dueño) | `javier@olympusgym.test` | `Demo1234!` | Cuenta de ejemplo del dueño |
-| OWNER (admin de desarrollo) | `omaradmin@gmail.com` | `omaradmin` | **Solo para desarrollo local**, no se despliega (ver abajo) |
+| OWNER (admin de desarrollo) | `omaradmin@gmail.com` | `omaradmin` | **Solo para desarrollo local**, no se despliega |
 | STAFF | `marta@olympusgym.test` / `dani@olympusgym.test` | `Demo1234!` | Entrenadores de ejemplo |
 | MEMBER | `carlos@olympusgym.test` y 11 socios más | `Demo1234!` | Ver `DevDataSeeder` para la lista completa y sus tarifas |
 
-En producción el seed de dev/demo no se ejecuta nunca (`DevDataSeeder` está limitado a esos dos
-perfiles): estas cuentas no existen fuera de desarrollo. El administrador real se crea con
-`ProductionAdminSeeder` a partir de `ADMIN_EMAIL` y `ADMIN_PASSWORD` (ver
-"Despliegue en producción" más abajo).
+Con `SPRING_PROFILES_ACTIVE=demo` (despliegue público), el conjunto es distinto y más
+pequeño — ver la tabla de cuentas públicas en "Despliegue en producción" más abajo; ni
+`javier@olympusgym.test` ni `omaradmin@gmail.com` existen ahí. En producción (`prod`) el seed
+de dev/demo no se ejecuta nunca (`DevDataSeeder` está limitado a esos dos perfiles): el
+administrador real se crea con `ProductionAdminSeeder` a partir de `ADMIN_EMAIL` y
+`ADMIN_PASSWORD`.
 
 ## Tests
 
@@ -193,14 +194,26 @@ en cualquier perfil. Qué más hay, lo decide `SPRING_PROFILES_ACTIVE` (variable
 - **`prod`**: solo el tenant, las tarifas y el OWNER real (`ProductionAdminSeeder`, a partir
   de `ADMIN_EMAIL`/`ADMIN_PASSWORD`). Nada de ejemplo: ni socios, ni horario, ni cuentas de
   demo.
-- **`demo`**: para una demo pública con datos de ejemplo. `DevDataSeeder` siembra el mismo
-  horario, socios y rutinas que en desarrollo (pero con las contraseñas fuertes de
-  `DEMO_OWNER_PASSWORD`/`DEMO_MEMBER_PASSWORD`, nunca las de desarrollo, y sin la cuenta de
-  admin de desarrollo). `/acceso` muestra una franja de aviso y dos botones ("Entrar como
-  socio/dueño de demostración") que inician sesión sin contraseña contra las cuentas de
-  ejemplo (`POST /api/v1/auth/demo-login`, que en modo `prod` ni siquiera existe: 404). Para
-  reiniciar la demo cada noche a sus datos de siempre: `./scripts/reset-demo.sh .env.prod`
-  (pensado para cron; borra lo que hayan creado o cambiado los visitantes y reseeda).
+- **`demo`**: para una demo pública con datos de ejemplo. Un único OWNER real sale de
+  `DEMO_OWNER_EMAIL`/`DEMO_OWNER_PASSWORD` (contraseña de 12 caracteres o más; el arranque
+  falla con un mensaje claro si faltan o es corta) y **nunca aparece en los botones de
+  acceso ni aquí abajo**: solo sirve para entrar a mano desde `/acceso` como cualquier otra
+  cuenta. Las cuentas públicas (2 staff, 3 socios — uno por tarifa) usan la misma contraseña
+  simple que el seed de desarrollo, `Demo1234!`, y sí están pensadas para enseñarse:
+
+  | Cuenta pública | Correo |
+  |---|---|
+  | Staff | `marta@olympusgym.test` / `dani@olympusgym.test` |
+  | Socio Básica | `marcos@olympusgym.test` |
+  | Socio Completa | `laura@olympusgym.test` |
+  | Socio Atleta Pro | `carlos@olympusgym.test` |
+
+  `/acceso` muestra una franja de aviso y dos botones ("Entrar como staff/socio de
+  demostración") que inician sesión sin contraseña contra una cuenta fija de cada tipo
+  (`POST /api/v1/auth/demo-login`, que en modo `prod` ni siquiera existe: 404). `/contacto` y
+  el registro en `/acceso` avisan de no escribir datos personales reales. Para reiniciar la
+  demo cada noche a sus datos de siempre: `./scripts/reset-demo.sh .env.prod` (pensado para
+  cron; deja exactamente el OWNER + staff + socios de arriba, borra todo lo demás).
 
 Variables obligatorias en `.env.prod` (el backend se niega a arrancar si faltan o son
 inválidas, ver `ProductionSecretsValidator`):
@@ -216,7 +229,7 @@ inválidas, ver `ProductionSecretsValidator`):
 | `LLM_FALLBACK_BASE_URL` / `LLM_FALLBACK_API_KEY` / `LLM_FALLBACK_MODEL` (opcionales) | Proveedor de respaldo si el principal se satura (ver "Proveedor de IA de respaldo" más arriba) |
 | `SPRING_PROFILES_ACTIVE` | `prod` (por defecto) o `demo` |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Solo con `SPRING_PROFILES_ACTIVE=prod`: el OWNER real del gimnasio (mínimo 12 caracteres en la contraseña) |
-| `DEMO_OWNER_PASSWORD` / `DEMO_MEMBER_PASSWORD` | Solo con `SPRING_PROFILES_ACTIVE=demo`: contraseñas fuertes para los botones de demo (`openssl rand -base64 18`) |
+| `DEMO_OWNER_EMAIL` / `DEMO_OWNER_PASSWORD` | Solo con `SPRING_PROFILES_ACTIVE=demo`: el único OWNER real, nunca público (mínimo 12 caracteres en la contraseña) |
 | `AI_LIMIT_*` (opcionales) | Límite de uso de la IA por socio/día y tope global diario; valores por defecto razonables si se dejan en blanco (ver `.env.prod.example`) |
 
 ### Copias de seguridad y Actuator

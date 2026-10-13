@@ -20,7 +20,7 @@ type AuthContextValue = {
   token: string | null;
   login: (email: string, password: string) => Promise<AuthUser>;
   register: (input: RegisterInput) => Promise<AuthUser>;
-  demoLogin: (role: "MEMBER" | "OWNER") => Promise<AuthUser>;
+  demoLogin: (role: "MEMBER" | "STAFF") => Promise<AuthUser>;
   logout: () => void;
 };
 
@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const demoLogin = useCallback(
-    async (role: "MEMBER" | "OWNER") => {
+    async (role: "MEMBER" | "STAFF") => {
       const auth = await api.demoLogin(role);
       return applySession(auth);
     },

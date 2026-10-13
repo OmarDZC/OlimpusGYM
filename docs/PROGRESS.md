@@ -13,6 +13,30 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 9f - Demo lista para un túnel de Cloudflare (2026-10-13)
+- Hecho: en modo demo, un único OWNER real sale de `DEMO_OWNER_EMAIL`/`DEMO_OWNER_PASSWORD`
+  (contraseña ≥12 caracteres, arranque falla con mensaje claro si falta o es corta) y nunca
+  aparece en los botones de `/acceso` ni en el README. Las cuentas públicas pasan a ser 2
+  staff + 3 socios (uno por tarifa) con la misma contraseña simple de siempre (`Demo1234!`);
+  `omaradmin@gmail.com` y el `javier@olympusgym.test` fijo ya no existen en demo (solo en
+  dev, sin cambios ahí). `scripts/reset-demo.sh` deja exactamente ese conjunto de 6 cuentas.
+  `/contacto` y el registro en `/acceso` avisan en modo demo de no escribir datos personales
+  reales. `docs/DEPLOY.md` con una sección para exponer la demo desde un PC con Cloudflare
+  Tunnel (`cloudflared tunnel --url`), y `scripts/demo-tunnel.ps1` para Windows. Confirmado
+  que solo Caddy publica puerto en `docker-compose.prod.yml`: el túnel no expone nada más.
+- Decisiones: los 3 socios de demo son carlos/laura/marcos (uno por tarifa); con solo 3 en
+  vez de 12, la sesión de ejemplo con lista de espera se reduce a aforo 2 (antes 7) para que
+  siga pudiendo demostrarse.
+- Pendiente: nada de lo pedido. `cloudflared` no está instalado en esta máquina y no se ha
+  instalado (fuera de alcance); solo documentado.
+- Tests: `mvn test` 130/0 fallos (108 omitidos sin Docker, incluidos 2 nuevos); `npm run
+  build` verde. Probado de verdad contra el stack de producción real en modo demo: login del
+  OWNER por variables de entorno, botones de staff/socio, ausencia de javier/omaradmin,
+  `reset-demo.sh` deja exactamente las 6 cuentas tras registrar un visitante y enviar un
+  mensaje de contacto.
+
+---
+
 ### Trozo 9e - Seguimiento vago sin tarjetas y 429 del entrenador (2026-10-11)
 - Hecho: asistente — la regla "no repitas la hora" del Trozo 9d era una sobrecorrección: ahora
   exige hora exacta en 24h y llamar siempre a listar_clases para preguntas de horario; el
