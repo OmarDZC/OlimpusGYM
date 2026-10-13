@@ -13,6 +13,34 @@ Anota aquí, al cerrar cada trozo del roadmap: qué se hizo, qué decisiones se 
 
 ---
 
+### Trozo 9g - Script del túnel autosuficiente (2026-10-13)
+- Hecho: `scripts/demo-tunnel.ps1` ahora resuelve la raíz del repo por su propia ubicación
+  (`$PSScriptRoot`), no por la carpeta desde la que se lance. Genera `JWT_SECRET`,
+  `POSTGRES_PASSWORD` y `REDIS_PASSWORD` con un generador criptográfico si faltan en
+  `.env.prod` (sin tocar los que ya hubiera), copia `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL`
+  y los `LLM_FALLBACK_*` desde `.env` sin imprimirlos (falla con un mensaje claro si falta
+  alguno obligatorio en `.env`), y ya no necesita `PUBLIC_URL`: el frontend llama a la API
+  con una ruta relativa al mismo origen (Caddy ya enruta `/api/*`), así que funciona igual
+  con la URL que dé `cloudflared` sin conocerla de antemano. Lo único que hay que escribir a
+  mano es `DEMO_OWNER_EMAIL`/`DEMO_OWNER_PASSWORD` en `.env.prod`.
+- Decisiones / simplificaciones: `PUBLIC_URL` pasa a ser opcional en `docker-compose.prod.yml`
+  en vez de intentar capturar la URL de `cloudflared` antes del build (más simple y más
+  robusto, y sirve también para cualquier despliegue de un solo dominio con Caddy delante,
+  no solo para el túnel).
+- Pendiente: `cloudflared` no está instalado en esta máquina, así que el túnel en sí (abrirlo
+  y comprobar la URL pública) no se probó de verdad; sí se probó todo lo demás contra el
+  stack real en `localhost`.
+- Cómo probarlo: `./scripts/demo-tunnel.ps1` desde cualquier carpeta con solo
+  `DEMO_OWNER_EMAIL`/`DEMO_OWNER_PASSWORD` en `.env.prod`.
+- Tests: `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build` (los
+  6 servicios quedan healthy), `reset-demo.sh`, login real del OWNER por `/api/v1/auth/login`
+  (200, rol OWNER) y una llamada real al asistente de IA como socia demo (200, respuesta con
+  tarjetas de clases). Se encontró y arregló un fallo real: el script escribía `.env.prod`
+  con marca BOM y no la quitaba al releer, así que a veces `DEMO_OWNER_EMAIL` se perdía en la
+  siguiente ejecución; ahora se lee y escribe siempre sin BOM.
+
+---
+
 ### Trozo 9f - Demo lista para un túnel de Cloudflare (2026-10-13)
 - Hecho: en modo demo, un único OWNER real sale de `DEMO_OWNER_EMAIL`/`DEMO_OWNER_PASSWORD`
   (contraseña ≥12 caracteres, arranque falla con mensaje claro si falta o es corta) y nunca
