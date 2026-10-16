@@ -1,6 +1,6 @@
-# GymFlow
+# OlympusGYM
 
-Plataforma SaaS para gimnasios: socios y tarifas, reservas de clases con control de aforo y lista de espera, asistente de IA que reserva por chat y entrenador personal con IA. Se demuestra con **OlympusGYM**, un gimnasio ficticio con su web, área de socio y panel de gestión.
+Plataforma SaaS para gimnasios: socios y tarifas, reservas de clases con control de aforo y lista de espera, asistente de IA que reserva por chat y entrenador personal con IA. Este repositorio es **OlympusGYM**, un gimnasio ficticio con su web, área de socio y panel de gestión, usado como demo del proyecto.
 
 Documentación del proyecto en `docs/`: `PROJECT_BRIEF.md` (alcance y decisiones), `LOGIC.md` (reglas y API), `DESIGN.md` (estilo), `ROADMAP.md` (orden de construcción) y `design/` (pantallas de referencia).
 
@@ -9,7 +9,7 @@ Documentación del proyecto en `docs/`: `PROJECT_BRIEF.md` (alcance y decisiones
 ## Cómo está montado
 
 ```
-gymflow/
+OlympusGYM/
 ├── backend/        Spring Boot 3 (Java 21): API principal, auth, reservas, pagos
 ├── ai-service/     FastAPI (Python): entrenador, asistente de reservas, RAG
 ├── frontend/       Next.js + TypeScript + Tailwind: panel del gimnasio y app del socio
@@ -181,6 +181,11 @@ solo para el límite de uso de la IA) y Caddy como único punto de entrada, con 
 automático (Let's Encrypt) cuando `DOMAIN` es un dominio real. Solo Caddy publica puertos (80
 y 443); el resto de servicios solo son alcanzables entre sí, por la red interna de Docker
 Compose. Guía completa paso a paso para un VPS Ubuntu en `docs/DEPLOY.md`.
+
+¿Solo quieres enseñar la demo sin un VPS? `docs/DEPLOY.md` también tiene una sección para
+levantarla desde tu propio PC con un túnel gratuito de Cloudflare (`scripts/demo-tunnel.ps1`,
+Windows): genera los secretos que falten, copia el proveedor de IA de tu `.env` y abre el
+túnel sin tener que configurar `PUBLIC_URL` a mano.
 
 ```bash
 cp .env.prod.example .env.prod   # y rellena los valores reales, nunca los de ejemplo
