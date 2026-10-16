@@ -17,23 +17,30 @@ class _FakeMessage:
 
 
 class _FakeChoice:
-    def __init__(self, content: str) -> None:
+    def __init__(self, content: str, finish_reason: str = "stop") -> None:
         self.message = _FakeMessage(content)
+        self.finish_reason = finish_reason
 
 
 class _FakeCompletion:
-    def __init__(self, content: str) -> None:
-        self.choices = [_FakeChoice(content)]
+    def __init__(self, content: str, finish_reason: str = "stop") -> None:
+        self.choices = [_FakeChoice(content, finish_reason)]
 
 
 class _FakeCompletions:
     def __init__(self, respond: Callable[[int], str]) -> None:
         self._respond = respond
         self.calls = 0
+        self.received_calls: list[dict] = []
 
-    def create(self, **_kwargs):
+    def create(self, **kwargs):
         self.calls += 1
-        return _FakeCompletion(self._respond(self.calls))
+        self.received_calls.append(kwargs)
+        # `respond` puede devolver solo el texto (finish_reason "stop" por defecto) o, para
+        # simular un corte por longitud, una tupla (texto, finish_reason).
+        result = self._respond(self.calls)
+        content, finish_reason = result if isinstance(result, tuple) else (result, "stop")
+        return _FakeCompletion(content, finish_reason)
 
 
 class _FakeChat:
@@ -50,6 +57,10 @@ class FakeOpenAIClient:
     @property
     def calls(self) -> int:
         return self.chat.completions.calls
+
+    @property
+    def received_calls(self) -> list[dict]:
+        return self.chat.completions.received_calls
 
 
 class FailingOpenAIClient:
@@ -122,9 +133,10 @@ class _FakeAssistantMessage:
         self.tool_calls = tool_calls
 
 
-def text(content: str) -> tuple[str, str]:
-    """Una respuesta final del modelo: sin más llamadas a herramientas en ese turno."""
-    return ("text", content)
+def text(content: str, finish_reason: str = "stop") -> tuple[str, tuple[str, str]]:
+    """Una respuesta final del modelo: sin más llamadas a herramientas en ese turno.
+    `finish_reason` solo importa para el entrenador (p. ej. "length" simula un corte)."""
+    return ("text", (content, finish_reason))
 
 
 def tool_call(name: str, **arguments) -> tuple[str, list[tuple[str, dict]]]:
@@ -188,7 +200,8 @@ class ScriptedToolCallingClient:
         if kind == "fail":
             raise payload
         if kind == "text":
-            message = _FakeAssistantMessage(content=payload, tool_calls=None)
+            content, finish_reason = payload
+            message = _FakeAssistantMessage(content=content, tool_calls=None)
         else:
             # El id incluye el número de paso (self.calls, ya incrementado) para que sea único
             # en todo el guion, no solo dentro de esta llamada: dos pasos que llaman a la misma
@@ -197,7 +210,8 @@ class ScriptedToolCallingClient:
                 _FakeToolCall(f"call_{self.calls}_{i}", name, args) for i, (name, args) in enumerate(payload)
             ]
             message = _FakeAssistantMessage(content=None, tool_calls=tool_calls)
-        choice = type("Choice", (), {"message": message})()
+            finish_reason = "tool_calls"
+        choice = type("Choice", (), {"message": message, "finish_reason": finish_reason})()
         return type("Completion", (), {"choices": [choice]})()
 
 

@@ -63,7 +63,28 @@ def fallback_client() -> OpenAI:
     )
 
 
-def call_with_retry_and_fallback(primary_client, primary_model: str, **create_kwargs):
+def _create(client, model: str, reasoning_effort: str | None, **create_kwargs):
+    """`chat.completions.create`, pidiendo de paso que el proveedor recorte o apague su
+    razonamiento interno si acepta `reasoning_effort` (parámetro del estándar compatible con
+    OpenAI, no todos los proveedores lo soportan). Se manda como `extra_body` para no chocar
+    con la validación del SDK; si el proveedor responde 400 por no reconocerlo, se reintenta
+    en el acto sin el parámetro (no es un fallo transitorio de red/cuota, así que no cuenta
+    para los reintentos de `call_with_retry_and_fallback`)."""
+    if reasoning_effort:
+        try:
+            return client.chat.completions.create(
+                model=model, extra_body={"reasoning_effort": reasoning_effort}, **create_kwargs
+            )
+        except APIStatusError as exc:
+            if exc.status_code != 400:
+                raise
+            logger.warning("El proveedor (%s) no acepta reasoning_effort: se reintenta sin él.", model)
+    return client.chat.completions.create(model=model, **create_kwargs)
+
+
+def call_with_retry_and_fallback(
+    primary_client, primary_model: str, *, reasoning_effort: str | None = None, **create_kwargs
+):
     """Llama a `chat.completions.create` en el proveedor principal, con reintentos cortos
     ante 429/5xx/red (hasta MAX_RETRY_WAIT_S de espera total, respetando Retry-After si el
     proveedor lo da). Si se agotan y hay un proveedor de respaldo configurado, prueba una vez
@@ -73,7 +94,7 @@ def call_with_retry_and_fallback(primary_client, primary_model: str, **create_kw
 
     for attempt in range(len(RETRY_DELAYS_S) + 1):
         try:
-            return primary_client.chat.completions.create(model=primary_model, **create_kwargs)
+            return _create(primary_client, primary_model, reasoning_effort, **create_kwargs)
         except Exception as exc:  # cualquier fallo al hablar con el proveedor: red, 401, timeout...
             last_exc = exc
             retryable = attempt < len(RETRY_DELAYS_S) and budget_left > 0 and is_retryable(exc)
@@ -99,7 +120,7 @@ def call_with_retry_and_fallback(primary_client, primary_model: str, **create_kw
             type(last_exc).__name__,
         )
         try:
-            return fallback_client().chat.completions.create(model=settings.llm_fallback_model, **create_kwargs)
+            return _create(fallback_client(), settings.llm_fallback_model, reasoning_effort, **create_kwargs)
         except Exception as fallback_exc:
             logger.warning("El proveedor de respaldo también falló (%s).", type(fallback_exc).__name__)
             raise fallback_exc from last_exc

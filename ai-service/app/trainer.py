@@ -33,12 +33,24 @@ MAX_ATTEMPTS = 2
 # Un tope fijo cortaba a mitad de JSON las rutinas de más días (visto de verdad: "Expecting
 # value" al parsear, JSON incompleto) y encima gastaba el reintento sin necesidad; por eso
 # escala con los días pedidos, con margen de sobra sobre lo que de verdad hace falta.
+#
+# Margen para razonamiento (visto de verdad con el respaldo, Gemini): algunos proveedores
+# consumen "tokens de pensamiento" internos contra el mismo tope de max_tokens antes de
+# escribir ni una letra del JSON (un caso real: 1138 de 1190 tokens en razonamiento, dejando
+# 48 para la respuesta → finish_reason "length" con el JSON a medias). REASONING_EFFORT le
+# pide a los proveedores que lo acepten que lo recorten (ver app/llm_retry.py); este margen
+# es la red de seguridad para cuando un proveedor no lo acepta y razona de todos modos.
 BASE_OUTPUT_TOKENS = 150
 OUTPUT_TOKENS_PER_DAY = 260
+REASONING_MARGIN_TOKENS = 700
+REASONING_EFFORT = "low"
+# Si un intento se corta por longitud (finish_reason "length"), el reintento pide más
+# presupuesto en vez de repetir con el mismo tope que ya se quedó corto.
+LENGTH_RETRY_MULTIPLIER = 1.6
 
 
 def _max_output_tokens(days_per_week: int) -> int:
-    return BASE_OUTPUT_TOKENS + OUTPUT_TOKENS_PER_DAY * days_per_week
+    return BASE_OUTPUT_TOKENS + OUTPUT_TOKENS_PER_DAY * days_per_week + REASONING_MARGIN_TOKENS
 
 GOAL_ES = {
     Goal.HYPERTROPHY: "ganar volumen muscular (hipertrofia)",
@@ -87,6 +99,9 @@ simple para principiante, más para avanzado.
 - "notes": como mucho una frase muy corta, o null si no aporta nada; nunca un párrafo.
 - Texto siempre en español llano: nada de jerga sin explicar ni palabras sueltas en inglés. Sin \
 texto de relleno: solo lo que pide el JSON.
+- JSON compacto: sin sangría ni saltos de línea de más, "summary" y "notes" cortos. El espacio \
+de la respuesta es limitado: prioriza completar todos los días antes que añadir detalle de más \
+en los primeros.
 """
 
 
@@ -137,11 +152,24 @@ def _extract_json(content: str) -> dict:
     text = content.strip()
     if text.startswith("```"):
         # Pese a las instrucciones, algunos modelos envuelven el JSON en un bloque de código.
-        text = text.strip("`")
+        text = text.strip("`").strip()
         if text[:4].lower() == "json":
             text = text[4:]
         text = text.strip()
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        # Tolera texto antes o después del JSON (p. ej. una frase de más pese a la instrucción
+        # de no añadir nada): usa el primer "{" y el último "}" si forman un bloque con pinta
+        # de JSON. Si el modelo no llegó a escribir ningún JSON de verdad, se propaga el error
+        # original (más informativo que el de este segundo intento).
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            raise exc from None
 
 
 def _parse_and_validate(content: str, request: PlanRequest) -> WeeklyPlan:
@@ -159,23 +187,37 @@ def _parse_and_validate(content: str, request: PlanRequest) -> WeeklyPlan:
 
 def generate_plan(client, model: str, request: PlanRequest) -> WeeklyPlan:
     previous_error: str | None = None
+    max_tokens = _max_output_tokens(request.days_per_week)
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
         messages = _build_messages(request, previous_error)
         try:
             response = call_with_retry_and_fallback(
-                client, model, messages=messages, temperature=0.4, max_tokens=_max_output_tokens(request.days_per_week)
+                client,
+                model,
+                reasoning_effort=REASONING_EFFORT,
+                messages=messages,
+                temperature=0.4,
+                max_tokens=max_tokens,
             )
         except Exception as exc:  # cualquier fallo al hablar con el proveedor: red, 401, 429...
             if is_rate_limited(exc):
                 raise LlmRateLimitedError(str(exc)) from exc
             raise LlmUnavailableError(str(exc)) from exc
 
-        content = response.choices[0].message.content or ""
+        choice = response.choices[0]
+        content = choice.message.content or ""
         try:
             return _parse_and_validate(content, request)
         except (json.JSONDecodeError, ValidationError, ValueError) as exc:
             previous_error = str(exc)
             logger.warning("Intento %s/%s: plan no válido (%s)", attempt, MAX_ATTEMPTS, previous_error)
+            if choice.finish_reason == "length":
+                # No es que la respuesta estuviera mal formada: es que no cupo. Repetir con el
+                # mismo tope solo repetiría el corte, así que el reintento pide más presupuesto
+                # en vez de limitarse a señalar el error (que aquí no es el motivo real).
+                max_tokens = int(max_tokens * LENGTH_RETRY_MULTIPLIER)
+                previous_error = "la respuesta se cortó por longitud antes de completar el JSON"
+                logger.warning("Intento %s/%s: cortado por longitud, subiendo el tope a %s", attempt, MAX_ATTEMPTS, max_tokens)
 
     raise LlmInvalidOutputError(previous_error or "El modelo no devolvió un plan válido.")

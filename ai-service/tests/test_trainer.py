@@ -174,4 +174,80 @@ def test_max_tokens_se_limita_segun_los_dias_pedidos():
 
     assert r.status_code == 200
     sent_kwargs = llm.received_calls[-1]
-    assert sent_kwargs.get("max_tokens") == 150 + 260 * REQUEST["days_per_week"]
+    # 700 de margen de razonamiento (ver app/trainer.py): necesario de verdad con el respaldo,
+    # que gasta la mayoría del tope en "pensar" antes de escribir una letra del JSON.
+    assert sent_kwargs.get("max_tokens") == 150 + 260 * REQUEST["days_per_week"] + 700
+
+
+def test_pide_reasoning_effort_al_proveedor():
+    # Algunos proveedores (el respaldo, Gemini) consumen el tope de tokens pensando antes de
+    # escribir el JSON; reasoning_effort les pide que lo recorten (va como extra_body, no como
+    # kwarg normal, para no romper proveedores que no lo reconocen).
+    llm = ScriptedToolCallingClient([text(json.dumps(VALID_PLAN))])
+    _override(llm)
+
+    r = client.post("/v1/trainer/plan", json=REQUEST)
+
+    assert r.status_code == 200
+    sent_kwargs = llm.received_calls[-1]
+    assert sent_kwargs.get("extra_body") == {"reasoning_effort": "low"}
+
+
+def test_json_envuelto_en_bloque_de_codigo_markdown_se_acepta():
+    fenced = "```json\n" + json.dumps(VALID_PLAN) + "\n```"
+    fake = FakeOpenAIClient(lambda call: fenced)
+    _override(fake)
+
+    r = client.post("/v1/trainer/plan", json=REQUEST)
+
+    assert r.status_code == 200
+    assert r.json()["summary"] == VALID_PLAN["summary"]
+    assert fake.calls == 1
+
+
+def test_json_con_texto_alrededor_se_extrae_igual():
+    # El modelo añade una frase de más pese a la instrucción de no hacerlo: el primer "{" y el
+    # último "}" siguen delimitando el JSON de verdad.
+    wrapped = "Aquí tienes tu rutina:\n" + json.dumps(VALID_PLAN) + "\n¡A entrenar!"
+    fake = FakeOpenAIClient(lambda call: wrapped)
+    _override(fake)
+
+    r = client.post("/v1/trainer/plan", json=REQUEST)
+
+    assert r.status_code == 200
+    assert fake.calls == 1
+
+
+def test_corte_por_longitud_reintenta_con_mas_presupuesto_y_se_recupera():
+    # Intento 1: se corta a mitad de JSON (finish_reason "length"); intento 2: con más tope,
+    # el modelo (aquí, el guion del test) sí completa un plan válido.
+    truncated = json.dumps(VALID_PLAN)[:40]
+
+    def respond(call: int):
+        if call == 1:
+            return (truncated, "length")
+        return json.dumps(VALID_PLAN)
+
+    fake = FakeOpenAIClient(respond)
+    _override(fake)
+
+    r = client.post("/v1/trainer/plan", json=REQUEST)
+
+    assert r.status_code == 200
+    assert r.json()["summary"] == VALID_PLAN["summary"]
+    assert fake.calls == 2
+    base_tokens = 150 + 260 * REQUEST["days_per_week"] + 700
+    assert fake.received_calls[0]["max_tokens"] == base_tokens
+    # El segundo intento pide más presupuesto que el primero, no el mismo tope que ya se quedó corto.
+    assert fake.received_calls[1]["max_tokens"] > base_tokens
+
+
+def test_corte_por_longitud_que_persiste_falla_igual_tras_el_reintento():
+    truncated = json.dumps(VALID_PLAN)[:40]
+    fake = FakeOpenAIClient(lambda call: (truncated, "length"))
+    _override(fake)
+
+    r = client.post("/v1/trainer/plan", json=REQUEST)
+
+    assert r.status_code == 502
+    assert fake.calls == 2
