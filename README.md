@@ -123,19 +123,18 @@ propuesta: hasta entonces puedes pedirle lo que quieras sin miedo a que reserve 
 ## Credenciales de demo
 
 Con `SPRING_PROFILES_ACTIVE=dev` (el valor por defecto de `make up`, desarrollo local): 12
-socios de ejemplo, un OWNER fijo y un admin de desarrollo, todos con la contraseña
-`Demo1234!` salvo este último. Solo existen en local, nunca se despliegan.
+socios de ejemplo y un OWNER fijo, todos con la contraseña `Demo1234!`. Solo existen en
+local, nunca se despliegan.
 
 | Rol | Correo | Contraseña | Notas |
 |---|---|---|---|
 | OWNER (dueño) | `javier@olympusgym.test` | `Demo1234!` | Cuenta de ejemplo del dueño |
-| OWNER (admin de desarrollo) | `omaradmin@gmail.com` | `omaradmin` | **Solo para desarrollo local**, no se despliega |
 | STAFF | `marta@olympusgym.test` / `dani@olympusgym.test` | `Demo1234!` | Entrenadores de ejemplo |
 | MEMBER | `carlos@olympusgym.test` y 11 socios más | `Demo1234!` | Ver `DevDataSeeder` para la lista completa y sus tarifas |
 
 Con `SPRING_PROFILES_ACTIVE=demo` (despliegue público), el conjunto es distinto y más
-pequeño — ver la tabla de cuentas públicas en "Despliegue en producción" más abajo; ni
-`javier@olympusgym.test` ni `omaradmin@gmail.com` existen ahí. En producción (`prod`) el seed
+pequeño — ver la tabla de cuentas públicas en "Despliegue en producción" más abajo;
+`javier@olympusgym.test` no existe ahí. En producción (`prod`) el seed
 de dev/demo no se ejecuta nunca (`DevDataSeeder` está limitado a esos dos perfiles): el
 administrador real se crea con `ProductionAdminSeeder` a partir de `ADMIN_EMAIL` y
 `ADMIN_PASSWORD`.
