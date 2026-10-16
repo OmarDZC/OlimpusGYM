@@ -1,6 +1,6 @@
 # OlympusGYM
 
-Plataforma SaaS para gimnasios: socios y tarifas, reservas de clases con control de aforo y lista de espera, asistente de IA que reserva por chat y entrenador personal con IA. Este repositorio es **OlympusGYM**, un gimnasio ficticio con su web, área de socio y panel de gestión, usado como demo del proyecto.
+Plataforma SaaS para gimnasios, de principio a fin: socios y tarifas, reservas de clases con control de aforo y lista de espera, asistente de IA que reserva por chat y entrenador personal con IA. Este repositorio es **OlympusGYM**, un gimnasio ficticio con su web pública, área de socio y panel de gestión.
 
 Documentación del proyecto en `docs/`: `PROJECT_BRIEF.md` (alcance y decisiones), `LOGIC.md` (reglas y API), `DESIGN.md` (estilo), `ROADMAP.md` (orden de construcción) y `design/` (pantallas de referencia).
 
